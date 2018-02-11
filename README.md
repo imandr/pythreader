@@ -58,9 +58,7 @@ Calling object's wakeup method will:
    function(*arguments)
    ```
 1. wake up one or many or all threads blocked by the await() call
-
-
-
+1. unlock the object
 
 ### Decorators
 PyThreader provides 2 decorator functions, named "sychronized" and "gated", which can be attributed to methods of Primitive subclasses.
@@ -92,6 +90,28 @@ class Buffer(Primitive):
             self.Buf = self.Buf[1:]
         return item
 ```
+
+Note that calling a synchronized method of an object is equivalent to using _with_ statement with the object:
+
+```python
+
+class A(Primitive):
+
+    def work(self):
+        #...
+        
+    @synchronized
+    def work_synchronized(self):
+        self.work()
+        
+a = A()
+
+a.work_synchronized()           # this is iquivalent to
+with a: a.work()                # ..................... this
+
+```
+
+The difference is that work_synchronized forces object locking.
 
 #### gated
 Decorator "gated" makes sure only certain number of threads can have this method or any other gated mentod invoked concurrently. Maximum concurrency is defined when the Primitive object is initialized by its constructor:
