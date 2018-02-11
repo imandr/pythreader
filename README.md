@@ -31,7 +31,7 @@ with l:
 Every Primitive object has methods await() and wakeup()
 
 #### await(timeout = None, function=None, arguments=())
-Wait until notified or until a timeout occurs.
+Wait until another thread calls wakeup() method of the same object of the timeout occurs.
 
 When the timeout argument is present and not None, it should be a floating point number specifying a timeout for the operation in seconds (or fractions thereof).
 
@@ -39,9 +39,9 @@ This is a convenient alternative to the standard Condition.wait() method provide
 1. acquire the lock associated with the condition
 1. call the wait() method of the condition
 1. if a _function_ was specified, call it with provided parameters like this:
-```python
-value = function(*arguments)
-```
+   ```python
+   value = function(*arguments)
+   ```
 1. release the lock
 1. return the value returned by the user supplied function, or None otherwise
 
