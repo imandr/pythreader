@@ -11,7 +11,7 @@ Primitive is a class, which represents most primitive synchronization object. It
 Primitive constructior takes one optional argument, which is its gate capacity, used by the "gated" method described below. Essentially, this parameter controls the semaphore capacity of the Primitive object.
 
 ### Primitive as a Lock
-Any primitive object can work like a **reentrant** lock (threaidng RLock) using _with_ statement:
+Any primitive object can work like a **reentrant** lock (threaidng RLock), i.e. it can be locked and releasded. A Primitive object is locked using using _with_ statement:
 
 ```python
 from pythreader import Primitive
@@ -38,20 +38,26 @@ Wait until another thread calls wakeup() method of the same object of the timeou
 When the timeout argument is present and not None, it should be a floating point number specifying a timeout for the operation in seconds (or fractions thereof).
 
 This is a convenient alternative to the standard Condition.wait() method provided by the threading module. Caller of the await() method does not have to acquire the lock associated with the condition explicitly. That is done inside the await() method, which works like this:
-1. acquire the lock associated with the condition
-1. call the wait() method of the condition
-1. if a _function_ was specified, call it with provided parameters like this:
+1. lock the object (acquire the lock associated with the underlying condition)
+1. call the wait() method of the condition (this will unlock the object and lock it again)
+1. if a _function_ was specified, call it with provided parameters like this (while the object is locked!):
    ```python
    value = function(*arguments)
    ```
-   note that the function will be called while the lock associated with the Primitive object is acquired (the object is locked)
-1. release the lock
+1. unlock the object
 1. return the value returned by the user supplied function, or None otherwise
 
 Note that if the _function_ is specified, it is called regardless whether the wait() exited by time-out or not.
 
 #### wakeup(n=1, all=False, function=None, arguments=())
+Calling object's wakeup method will:
 
+1. lock the obejct
+1. if a function is specified, call it with given arguments:
+   ```python
+   function(*arguments)
+   ```
+1. wake up one or many or all threads blocked by the await() call
 
 
 
