@@ -6,6 +6,53 @@ PyThreader (pronounced as pie threader) is a library built on top of the standar
 
 Primitive is a class, which represents most primitive synchronization object. It combines essential functionality of _threading_'s Lock, Condition and Semaphore object into a single class. The user is supposed to derive their own subclasses from the Primitive class to build their own classes, implementing the desired functionality.
 
+
+### Primitive as a Semaphore
+Primitive constructior takes one optional argument, which is its gate capacity, used by the "gated" method described below. Essentially, this parameter controls the semaphore capacity of the Primitive object.
+
+### Primitive as a Lock
+Any primitive object can work like a **reentrant** lock (threaidng RLock) using _with_ statement:
+
+```python
+from pythreader import Primitive
+
+class MyLock(Primitive):
+    ...
+    
+l = MyLock()
+
+...
+
+with l:
+    # do something
+```
+
+### Primitive as a Condition
+Every Primitive object has methods await() and wakeup():
+
+####await(timeout = None, function=None, arguments=())
+Wait until notified or until a timeout occurs.
+
+When the timeout argument is present and not None, it should be a floating point number specifying a timeout for the operation in seconds (or fractions thereof).
+
+This is a convenient alternative to the standard Condition.wait() method provided by the threading module. Caller of the await() method does not have to acquire the lock associated with the condition explicitly. That is done inside the await() method, which works like this:
+1. acquire the lock associated with the condition
+1. call the wait() method of the condition
+1. if a _function_ was specified, call it with provided parameters like this:
+```python
+value = function(*arguments)
+```
+1. release the lock
+1. return the value returned by the user supplied function, or None otherwise
+
+Note that if the _function_ is specified, it is called regardless whether the wait() exited by time-out or not.
+
+####wakeup(n=1, all=False, function=None, arguments=())
+
+
+
+
+
 ### Decorators
 PyThreader provides 2 decorator functions, named "sychronized" and "gated", which can be attributed to methods of Primitive subclasses.
 
@@ -38,7 +85,7 @@ class Buffer(Primitive):
 ```
 
 #### gated
-Decorator "gated" makes sure only certain number of threads can have this method invoked concurrently. Maximum concurrency is defined when the Primitive object is initialized by its constructor:
+Decorator "gated" makes sure only certain number of threads can have this method or any other gated mentod invoked concurrently. Maximum concurrency is defined when the Primitive object is initialized by its constructor:
 
 ```python
 from pythreader import Primitive, gated
@@ -49,11 +96,16 @@ class Gate(Primitive):
         Primitive.__init__(self, concurrency)
     
     @gated
-    def work(self, args):
-        worker = Worker()
-        worker.callAndWait(args)
-```
+    def phase1(self, args):
+        # do something ...
+        
+    @gated
+    def phase2(self, args):
+        # do something else ...
 
+G = g(5)
+```
+In this example, at any time, only 5 threads can be executing G.phase1 and G.phase2 at the same time, combined. I.e. there could be 5 threads inside phase1 and 0 inside phase2, or 3 inside phase1 and 2 inside phase2.
 
         
 
