@@ -15,7 +15,6 @@ Decorator "synchronized" is very similar to "synchronized" method attribute in J
 For example:
 
 ```python
-
 from pythreader import Primitive, synchronized
 
 class Buffer(Primitive):
@@ -27,6 +26,7 @@ class Buffer(Primitive):
     @synchronized
     def push(self, x):
         self.Buf.append(x)
+        self.Buf.sort()
         
     @synchronized
     def pop(self):
@@ -35,6 +35,4 @@ class Buffer(Primitive):
             item = x[0]
             self.Buf = self.Buf[1:]
         return item
-
-
 ```
