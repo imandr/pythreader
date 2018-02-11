@@ -28,9 +28,9 @@ with l:
 ```
 
 ### Primitive as a Condition
-Every Primitive object has methods await() and wakeup():
+Every Primitive object has methods await() and wakeup()
 
-####await(timeout = None, function=None, arguments=())
+#### await(timeout = None, function=None, arguments=())
 Wait until notified or until a timeout occurs.
 
 When the timeout argument is present and not None, it should be a floating point number specifying a timeout for the operation in seconds (or fractions thereof).
@@ -47,7 +47,7 @@ value = function(*arguments)
 
 Note that if the _function_ is specified, it is called regardless whether the wait() exited by time-out or not.
 
-####wakeup(n=1, all=False, function=None, arguments=())
+#### wakeup(n=1, all=False, function=None, arguments=())
 
 
 
