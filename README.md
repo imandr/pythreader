@@ -24,8 +24,10 @@ l = MyLock()
 ...
 
 with l:
-    # do something
+    # do something while the object is "locked"
 ```
+
+Wile the Primitive object is locked, no other thread can lock the object and will have to block until the thread which has locked it releases the lock.
 
 ### Primitive as a Condition
 Every Primitive object has methods await() and wakeup()
@@ -42,6 +44,7 @@ This is a convenient alternative to the standard Condition.wait() method provide
    ```python
    value = function(*arguments)
    ```
+   note that the function will be called while the lock associated with the Primitive object is acquired (the object is locked)
 1. release the lock
 1. return the value returned by the user supplied function, or None otherwise
 
