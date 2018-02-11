@@ -11,7 +11,7 @@ def read(fname):
 def get_version():
     g = {}
     exec(open(os.path.join("pythreader", "Version.py"), "r").read(), g)
-    return g["__version__"]
+    return g["Version"]
 
 
 setup(
