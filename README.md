@@ -36,3 +36,24 @@ class Buffer(Primitive):
             self.Buf = self.Buf[1:]
         return item
 ```
+
+#### gated
+Decorator "gated" makes sure only certain number of threads can have this method invoked concurrently. Maximum concurrency is defined when the Primitive object is initialized by its constructor:
+
+```python
+from pythreader import Primitive, gated
+
+class Gate(Primitive):
+
+    def __init__(self, concurrency):
+        Primitive.__init__(self, concurrency)
+    
+    @gated
+    def work(self, args):
+        worker = Worker()
+        worker.callAndWait(args)
+```
+
+
+        
+
