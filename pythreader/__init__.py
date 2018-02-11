@@ -1,8 +1,8 @@
-from core import (Primitive, synchronized, MyThread, gated)
+from core import (Primitive, synchronized, PyThread, gated)
 from Queue import (Queue,)
 from TaskQueue import (TaskQueue, Task)
 from Subprocess import (Subprocess, ShellCommand)
-from Version import (Version,)
+from Version import (Version,__version__,version_info)
 
 __all__ = [
     'Primitive',
@@ -14,5 +14,5 @@ __all__ = [
     'TaskQueue',
     'Subprocess',
     'ShellCommand',
-    'Version'
+    'Version', '__version__', 'version_info'
 ]

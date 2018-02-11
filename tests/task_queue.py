@@ -1,5 +1,5 @@
 import time, random
-from threads import TaskQueue, Task
+from pythreader import TaskQueue, Task
 from threading import Timer
 
 class MyTask(Task):

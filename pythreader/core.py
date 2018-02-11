@@ -69,7 +69,7 @@ class Primitive:
         else:
             self._WakeUp.notify(n)
 
-class MyThread(Thread, Primitive):
+class PyThread(Thread, Primitive):
     def __init__(self):
         Thread.__init__(self)
         Primitive.__init__(self)

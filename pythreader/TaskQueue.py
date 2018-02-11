@@ -1,5 +1,5 @@
 import time
-from .core import Primitive, MyThread, synchronized
+from .core import Primitive, PyThread, synchronized
 from .Queue import Queue
 from threading import Timer
 
@@ -53,9 +53,9 @@ class FunctionTask(Task):
     
 class TaskQueue(Primitive):
     
-    class ExecutorThread(MyThread):
+    class ExecutorThread(PyThread):
         def __init__(self, queue, task):
-            MyThread.__init__(self)
+            PyThread.__init__(self)
             self.Queue = queue
             self.Task = task
             

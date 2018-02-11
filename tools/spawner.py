@@ -1,5 +1,7 @@
-import subprocess, time, sys, getopt, os
-from threads import TaskQueue, Subprocess, Task
+#!/usr/bin/env python
+
+import time, sys, getopt, os
+from pythreader import TaskQueue, Subprocess, Task
 
 class SubprocessTask(Task):
 
@@ -24,7 +26,7 @@ class SubprocessTask(Task):
         sp.wait()
         print "\n%d is done" % (self.Index,)
         
-Usage = """python spawner.py [options] command [args...]
+Usage = """spawner.py [options] command [args...]
     Options:   -m <max concurrency>
                -n <number of tasks>
                -s <stagger interval in seconds>
