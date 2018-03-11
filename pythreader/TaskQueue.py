@@ -144,6 +144,16 @@ class TaskQueue(Primitive):
         return self.Queue.items(), [t.Task for t in self.Threads]
         
     @synchronized
+    def activeTasks(self):
+        return [t.Task for t in self.Threads]
+        
+    @synchronized
+    def waitingTasks(self):
+        return self.Queue.items()
+        
+    
+        
+    @synchronized
     def hold(self):
         self.Held = True
         
@@ -161,6 +171,10 @@ class TaskQueue(Primitive):
         if not self.isEmpty():
             while not self.await(function=self.isEmpty):
                 pass
+                
+    def drain(self):
+        self.hold()
+        self.waitUntilEmpty()
                 
     @synchronized
     def flush(self):
