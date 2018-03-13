@@ -84,7 +84,6 @@ class TaskQueue(Primitive):
         for t in tasks:
             self.addTask(t)
 
-    @synchronized
     def addTask(self, task):
         self.Queue.append(task)
         self.startThreads()
@@ -96,7 +95,6 @@ class TaskQueue(Primitive):
     def __lshift__(self, task):
         return self.addTask(task)
         
-    @synchronized
     def insertTask(self, task):
         self.Queue.insert(task)
         self.startThreads()
