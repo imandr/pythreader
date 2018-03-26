@@ -43,8 +43,8 @@ def printWaiting():
         print w
 
 class Primitive:
-    def __init__(self, gate=1):
-        self._Lock = RLock()
+    def __init__(self, gate=1, lock=None):
+        self._Lock = lock if lock is not None else RLock()
         self._WakeUp = Condition(self._Lock)
         self._Gate = Semaphore(gate)
 
@@ -70,7 +70,14 @@ class Primitive:
             self._WakeUp.notify(n)
 
 class PyThread(Thread, Primitive):
-    def __init__(self):
+    def __init__(self, func=None, *params, **args):
         Thread.__init__(self)
         Primitive.__init__(self)
+        self.Func = func
+        self.Params = params
+        self.Args = args
+        
+    def run(self):
+        if self.Func is not None:
+            self.Func(*self.Params, **self.Args)
 

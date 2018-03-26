@@ -104,7 +104,7 @@ class RWLock(Primitive):
             def __exit__(self, t, v, tb):
                 return self.RWLock.releaseExclusive()
         return ExclusiveContext(self)
-        
+    
     @property
     def shared(self):
         class SharedContext(object):
