@@ -60,18 +60,26 @@ class Subprocess(subprocess.Popen, Primitive):
                             else:
                                 err_lst.append(data)
                 status = self.poll()
-                #print "Subprocess.wait: status=%s" % (status,)
+                #print "Subprocess.wait: status=%s, pipes=%d" % (status,open_pipes)
 
             if outfd is not None:
                 fcntl.fcntl(outfd, fcntl.F_SETFL, out_flags)
             if errfd is not None:
                 fcntl.fcntl(errfd, fcntl.F_SETFL, err_flags)
 
+	if status is None:
+		while status is None and time.time() < t1:
+			#print "keep waiting after all pipes closed..."
+			time.sleep(0.1)
+			status = self.poll()
+
         if status is not None:
             out = self.stdout.read()
             out_lst.append(out or "")
             err = self.stderr.read()
             err_lst.append(err or "")
+
+	#print "status=", status
         return status, "".join(out_lst), "".join(err_lst)
         
 class ShellCommand(Subprocess):
