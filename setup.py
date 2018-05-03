@@ -24,7 +24,7 @@ setup(
     keywords = "threading, synchronization",
     url = "https://github.com/imandr/pythreader",
     packages=['pythreader', 'tests'],
-    long_description=read('README.md'),
+    long_description="A set of useful tools built on top of standard Python threading module", #read('README'),
     classifiers=[
         "Operating System :: POSIX",
         "Topic :: Software Development :: Libraries :: Python Modules",

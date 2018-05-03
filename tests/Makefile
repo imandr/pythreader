@@ -1,5 +1,5 @@
 FILES = \
-    task_queue.py
+    task_queue.py rwlock.py
 DST_DIR = $(BUILD_DIR)/tests
 
 build: $(DST_DIR)
