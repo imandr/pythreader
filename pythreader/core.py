@@ -1,4 +1,5 @@
 from threading import RLock, Thread, Event, Condition, Semaphore
+import time
 
 Waiting = []
 In = []
@@ -81,3 +82,28 @@ class PyThread(Thread, Primitive):
         if self.Func is not None:
             self.Func(*self.Params, **self.Args)
 
+class TimerThread(PyThread):
+    def __init__(self, function, interval, *params, **args):
+        PyThread.__init__(self)
+        self.Interval = interval
+        self.Func = function
+        self.Params = params
+        self.Args = args
+        self.Pause = False
+
+    def run(self):
+        while True:
+            if self.Pause:
+                self.await()
+            self.Func(*self.Params, **self.Args)
+            time.sleep(self.Interval)
+    
+    def pause(self):
+        self.Pause = True
+        
+    def resume(self):
+        self.Pause = False
+        self.wakeup()
+                
+            
+            

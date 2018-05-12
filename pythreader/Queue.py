@@ -54,7 +54,20 @@ class Queue(Primitive):
     @synchronized
     def items(self):
         return self.List
-
+        
+    @synchronized
+    def look(self):
+        return self.List[0] if self.List else None
+        
+    @synchronized
+    def popIfFirst(self, x):
+        if self.List:
+            first = self.List[0]
+            if first is x or first == x:
+                self.pop()
+                return x
+        return None
+        
     @synchronized
     def __len__(self):
         return len(self.List)

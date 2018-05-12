@@ -1,4 +1,4 @@
-from core import (Primitive, synchronized, PyThread, gated)
+from core import (Primitive, synchronized, PyThread, gated, TimerThread)
 from Queue import (Queue,)
 from TaskQueue import (TaskQueue, Task)
 from Subprocess import (Subprocess, ShellCommand)
@@ -13,6 +13,7 @@ version_info = tuple(Version.split("."))
 __all__ = [
     'Primitive',
     'PyThread',
+    'TimerThread',
     'Queue',
     'gated',
     'synchronized',
