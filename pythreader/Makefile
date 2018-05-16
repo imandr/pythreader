@@ -1,5 +1,7 @@
 FILES = \
-    core.py  __init__.py  Queue.py  Subprocess.py  TaskQueue.py Version.py
+    core.py  __init__.py  Queue.py  Subprocess.py  TaskQueue.py Version.py \
+    RWLock.py
+
 LIB_DIR = $(BUILD_DIR)/pythreader
 
 build: $(LIB_DIR)

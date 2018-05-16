@@ -17,7 +17,7 @@ build: $(BUILD_DIR)
 	cd tools; make BUILD_DIR=$(BUILD_DIR) build
     
 tarball: clean build $(TAR_DIR)
-	cd $(BUILD_DIR)/..; tar cf $(TAR_FILE) pythreader
+	cd $(BUILD_DIR); tar cf $(TAR_FILE) *
 	@echo 
 	@echo Tar file $(TAR_FILE) is ready
 	@echo 
