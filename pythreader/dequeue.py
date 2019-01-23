@@ -45,6 +45,26 @@ class Queue(Primitive):
         self.List = self.List[1:]
         self.wakeup()
         return item
+
+    #
+    # Iterator protocol
+    # 
+    # for item in queue:        # wait for next item to arrive
+    #   # ... process item
+    #
+    
+    def __iter__(self):
+        return self
+
+    def next(self):
+        while not self.Closed:
+            item = self.pop()
+            if item is not None:
+                return item
+            else:
+                break
+        raise StopIteration()
+        
         
     @synchronized
     def flush(self):

@@ -1,6 +1,6 @@
 import time
 from .core import Primitive, PyThread, synchronized
-from .Queue import Queue
+from .dqueue import DEQueue
 from threading import Timer
 
 class Task(Primitive):
@@ -76,7 +76,7 @@ class TaskQueue(Primitive):
         Primitive.__init__(self)
         self.NWorkers = nworkers
         self.Threads = []
-        self.Queue = Queue(capacity)
+        self.Queue = DEQueue(capacity)
         self.Held = False
         self.Stagger = stagger
         self.LastStart = 0.0

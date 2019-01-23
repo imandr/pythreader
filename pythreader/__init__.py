@@ -1,7 +1,7 @@
-from core import (Primitive, synchronized, PyThread, gated, TimerThread)
-from Queue import (Queue,)
-from TaskQueue import (TaskQueue, Task)
-from Subprocess import (Subprocess, ShellCommand)
+from core import Primitive, synchronized, PyThread, gated, TimerThread
+from dequeue import DEQueue
+from TaskQueue import TaskQueue, Task
+from Subprocess import Subprocess, ShellCommand
 from RWLock import RWLock
 from Version import Version
 
@@ -14,7 +14,7 @@ __all__ = [
     'Primitive',
     'PyThread',
     'TimerThread',
-    'Queue',
+    'DEQueue',
     'gated',
     'synchronized',
     'Task',

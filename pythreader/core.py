@@ -49,6 +49,9 @@ class Primitive:
         self._WakeUp = Condition(self._Lock)
         self._Gate = Semaphore(gate)
 
+    def getLock(self):
+        return self._Lock
+        
     def __enter__(self):
         return self._Lock.__enter__()
         
