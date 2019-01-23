@@ -1,5 +1,4 @@
 from .core import Primitive, synchronized
-from .Queue import Queue
 from threading import current_thread
 import threading
 
