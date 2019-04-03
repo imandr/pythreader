@@ -1,6 +1,7 @@
 from .core import Primitive, synchronized
+import time
 
-class Queue(Primitive):
+class DEQueue(Primitive):
 
     def __init__(self, capacity=None):
         Primitive.__init__(self)
@@ -14,10 +15,18 @@ class Queue(Primitive):
         self.wakeup()
         
     @synchronized    
-    def append(self, item):
+    def append(self, item, timeout=None):
         assert not self.Closed, "The queue is closed"
+        t0 = time.time()
+        t1 = None if timeout is None else t0 + timeout
         while self.Capacity is not None and len(self.List) >= self.Capacity:
-            self.await()
+            dt = None
+            if t1 is not None:
+                t = time.time()
+                if t > t1:
+                    raise RuntimeError("Operation timed-out")
+                dt = t1 - t
+            self.await(dt)
         self.List.append(item)
         self.wakeup()
         
@@ -27,8 +36,16 @@ class Queue(Primitive):
     @synchronized    
     def insert(self, item):
         assert not self.Closed, "The queue is closed"
+        t0 = time.time()
+        t1 = None if timeout is None else t0 + timeout
         while self.Capacity is not None and len(self.List) >= self.Capacity:
-            self.await()
+            dt = None
+            if t1 is not None:
+                t = time.time()
+                if t > t1:
+                    raise RuntimeError("Operation timed-out")
+                dt = t1 - t
+            self.await(dt)
         self.List.insert(0, item)
         self.wakeup()
 

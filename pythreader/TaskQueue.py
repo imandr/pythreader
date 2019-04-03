@@ -1,6 +1,6 @@
 import time
 from .core import Primitive, PyThread, synchronized
-from .dqueue import DEQueue
+from .dequeue import DEQueue
 from threading import Timer
 
 class Task(Primitive):
@@ -84,8 +84,8 @@ class TaskQueue(Primitive):
         for t in tasks:
             self.addTask(t)
 
-    def addTask(self, task):
-        self.Queue.append(task)
+    def addTask(self, task, timeout = None):
+        self.Queue.append(task, timeout=timeout)
         self.startThreads()
         return self
         
@@ -95,8 +95,8 @@ class TaskQueue(Primitive):
     def __lshift__(self, task):
         return self.addTask(task)
         
-    def insertTask(self, task):
-        self.Queue.insert(task)
+    def insertTask(self, task, timeout = None):
+        self.Queue.insert(task, timeout = timeout)
         self.startThreads()
         return self
         
