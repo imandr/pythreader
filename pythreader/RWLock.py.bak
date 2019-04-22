@@ -19,7 +19,7 @@ class RWLock(Primitive):
         if not self.Exclusive in threads:
             self.Exclusive = None
             self.ExclusiveCount = None
-        for t in list(self.Shared.keys()):
+        for t in self.Shared.keys():
             if not t in threads:
                 del self.Shared[t]
         self.ExclusiveQueue = [t for t in self.ExclusiveQueue if t in threads]
@@ -75,12 +75,12 @@ class RWLock(Primitive):
     @synchronized
     def acquireExclusive(self):
         while not self.__acq_exclusive():
-            self.sleep()
+            self.await()
             
     @synchronized
     def acquireShared(self):
         while not self.__acq_shared():
-            self.sleep()
+            self.await()
             
     @synchronized
     def releaseExclusive(self):
@@ -120,5 +120,5 @@ class RWLock(Primitive):
         
     @synchronized
     def owners(self):
-        return self.Exclusive, list(self.Shared.keys())
+        return self.Exclusive, self.Shared.keys()
         

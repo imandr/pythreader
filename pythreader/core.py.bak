@@ -1,6 +1,5 @@
 from threading import RLock, Thread, Event, Condition, Semaphore
 import time
-import sys
 
 Waiting = []
 In = []
@@ -37,12 +36,12 @@ def gated(method):
 
 
 def printWaiting():
-    print("waiting:----")
+    print "waiting:----"
     for w in Waiting:
-        print(w)
-    print("in:---------")
+        print w
+    print "in:---------"
     for w in In:
-        print(w)
+        print w
 
 class Primitive:
     def __init__(self, gate=1, lock=None):
@@ -60,7 +59,7 @@ class Primitive:
         return self._Lock.__exit__(exc_type, exc_value, traceback)
 
     @synchronized
-    def sleep(self, timeout = None, function=None, arguments=()):
+    def await(self, timeout = None, function=None, arguments=()):
         self._WakeUp.wait(timeout)
         if function is not None:
             return function(*arguments)
@@ -73,10 +72,6 @@ class Primitive:
             self._WakeUp.notifyAll()
         else:
             self._WakeUp.notify(n)
-
-if sys.version_info < (3,0):
-	Primitive.setattr("await", Primitive.sleep)
-
 
 class PyThread(Thread, Primitive):
     def __init__(self, func=None, *params, **args):
@@ -102,7 +97,7 @@ class TimerThread(PyThread):
     def run(self):
         while True:
             if self.Pause:
-                self.sleep()
+                self.await()
             self.Func(*self.Params, **self.Args)
             time.sleep(self.Interval)
     

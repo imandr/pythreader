@@ -139,7 +139,7 @@ class TaskQueue(Primitive):
             
     @synchronized
     def tasks(self):
-        return list(self.Queue.items()), [t.Task for t in self.Threads]
+        return self.Queue.items(), [t.Task for t in self.Threads]
         
     @synchronized
     def activeTasks(self):
@@ -147,7 +147,7 @@ class TaskQueue(Primitive):
         
     @synchronized
     def waitingTasks(self):
-        return list(self.Queue.items())
+        return self.Queue.items()
         
     
         
@@ -167,7 +167,7 @@ class TaskQueue(Primitive):
     def waitUntilEmpty(self):
         # wait until all tasks are done and the queue is empty
         if not self.isEmpty():
-            while not self.sleep(function=self.isEmpty):
+            while not self.await(function=self.isEmpty):
                 pass
                 
     def drain(self):
