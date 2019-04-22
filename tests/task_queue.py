@@ -9,12 +9,12 @@ class MyTask(Task):
         self.Id = tid
 
     def run(self):
-        print time.time(), self.Id, "started as instance"
+        print (time.time(), self.Id, "started as instance")
         time.sleep(random.random()*3)
-        print self.Id, "ended"
+        print (self.Id, "ended")
 
     def failed(self, e):
-        print e
+        print (e)
 
 q = TaskQueue(5, stagger=1.0, tasks=[MyTask(x) for x in range(10)])
 q << MyTask(30) << MyTask(31)
