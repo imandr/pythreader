@@ -65,6 +65,7 @@ class Primitive:
         if function is not None:
             return function(*arguments)
 
+    # await is a reserved word in Python 3, use "wakeup" instead
     @synchronized
     def wakeup(self, n=1, all=False, function=None, arguments=()):
         if function is not None:
@@ -75,7 +76,9 @@ class Primitive:
             self._WakeUp.notify(n)
 
 if sys.version_info < (3,0):
-	Primitive.setattr("await", Primitive.sleep)
+    # await is a reserved word in Python 3, keep it for backward compatibility
+    # in Python 2.
+    setattr(Primitive, "await", Primitive.sleep)
 
 
 class PyThread(Thread, Primitive):
