@@ -7,8 +7,8 @@ class Task(Primitive):
 
     def __init__(self):
         Primitive.__init__(self)
-        self.Started = None
-        self.Ended = None
+        self._t_Started = None
+        self._t_Ended = None
     
     #def __call__(self):
     #    pass
@@ -19,25 +19,25 @@ class Task(Primitive):
     @synchronized
     @property
     def started(self):
-        return self.Started is not None
+        return self._t_Started is not None
         
     @synchronized
     @property
     def running(self):
-        return self.Started is not None and self.Ended is None
+        return self._t_Started is not None and self._t_Ended is None
         
     @synchronized
     @property
     def ended(self):
-        return self.Started is not None and self.Ended is not None
+        return self._t_Started is not None and self._t_Ended is not None
         
     @synchronized
     def start(self):
-        self.Started = time.time()
+        self._t_Started = time.time()
         
     @synchronized
     def end(self):
-        self.Ended = time.time()
+        self._t_Ended = time.time()
 
 class FunctionTask(Task):
 
