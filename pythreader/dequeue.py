@@ -81,6 +81,8 @@ class DEQueue(Primitive):
             else:
                 break
         raise StopIteration()
+
+    next = __next__
         
         
     @synchronized
