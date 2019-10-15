@@ -72,13 +72,13 @@ class TaskQueue(Primitive):
                 self.Queue.threadEnded(self)
                 self.Queue = None
                     
-    def __init__(self, nworkers, capacity=None, stagger=0.0, tasks = []):
+    def __init__(self, nworkers, capacity=None, stagger=None, tasks = []):
         Primitive.__init__(self)
         self.NWorkers = nworkers
         self.Threads = []
         self.Queue = DEQueue(capacity)
         self.Held = False
-        self.Stagger = stagger
+        self.Stagger = stagger or 0.0
         self.LastStart = 0.0
         self.StartTimer = None
         for t in tasks:
