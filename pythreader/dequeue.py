@@ -16,10 +16,10 @@ class DEQueue(Primitive):
         
     @synchronized    
     def append(self, item, timeout=None):
-        assert not self.Closed, "The queue is closed"
         t0 = time.time()
         t1 = None if timeout is None else t0 + timeout
-        while self.Capacity is not None and len(self.List) >= self.Capacity:
+        while self.Capacity is not None and len(self.List) >= self.Capacity \
+                        and not self.Closed:
             dt = None
             if t1 is not None:
                 t = time.time()
@@ -27,6 +27,8 @@ class DEQueue(Primitive):
                     raise RuntimeError("Operation timed-out")
                 dt = t1 - t
             self.sleep(dt)
+        if self.Closed:
+            raise RuntimeError("Queue is closed")
         self.List.append(item)
         self.wakeup()
         
@@ -34,7 +36,7 @@ class DEQueue(Primitive):
         return self.add(item)
     
     @synchronized    
-    def insert(self, item):
+    def insert(self, item, timeout=None):
         assert not self.Closed, "The queue is closed"
         t0 = time.time()
         t1 = None if timeout is None else t0 + timeout
@@ -73,8 +75,11 @@ class DEQueue(Primitive):
     def __iter__(self):
         return self
 
+    @synchronized
     def __next__(self):
-        while not self.Closed:
+        while not self.Closed or len(self) > 0:
+            while not self.Closed and len(self) == 0:
+                self.sleep()
             item = self.pop()
             if item is not None:
                 return item
@@ -84,13 +89,11 @@ class DEQueue(Primitive):
 
     next = __next__
         
-        
     @synchronized
     def flush(self):
         self.List = []
         self.wakeup()
         
-    @synchronized
     def items(self):
         return self.List
         

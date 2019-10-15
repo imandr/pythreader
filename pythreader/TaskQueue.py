@@ -85,7 +85,9 @@ class TaskQueue(Primitive):
             self.addTask(t)
 
     def addTask(self, task, timeout = None):
+        #print "addTask() entry"
         self.Queue.append(task, timeout=timeout)
+        #print "queue.append done"
         self.startThreads()
         return self
         
@@ -106,29 +108,41 @@ class TaskQueue(Primitive):
     @synchronized
     def armStartTimer(self):
         def fire():
+            #print "fire() entry"
             with self:
                 self.StartTimer = None
+                #print "fire: calling startThreads..."
                 self.startThreads()
+                #print "fire: done"
         if self.StartTimer is None:
-            self.StartTimer = Timer(self.Stagger, fire)
+            delta = max(0.0, self.LastStart + self.Stagger - time.time())
+            self.StartTimer = Timer(delta, fire)
             self.StartTimer.start()
+        else:
+            #print "timer already armed"
+            pass
         
         
     @synchronized
     def startThreads(self):
+        #print "startThreads() entry"
         if not self.Held:
-            while self.Queue and len(self.Threads) < self.NWorkers:
+            while self.Queue and len(self.Threads) < self.NWorkers and not self.Held:
                 if self.Stagger > 0.0 and time.time() < self.LastStart + self.Stagger:
+                    #print "arming timer..."
                     self.armStartTimer()
                     break
                 else:
                     # start next thread
-                    self.LastStart = time.time()
+                    #print "staring thread..."
                     task = self.Queue.pop()
                     t = self.ExecutorThread(self, task)
+                    t.kind = "%s.task" % (self.kind,)
                     self.Threads.append(t)
                     t.start()
-                    
+                    self.LastStart = time.time()
+        #print "startThreads() exit"
+                   
             
     @synchronized
     def threadEnded(self, t):
@@ -181,3 +195,4 @@ class TaskQueue(Primitive):
             
     def __len__(self):
         return len(self.Queue)
+

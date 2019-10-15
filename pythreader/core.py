@@ -1,37 +1,25 @@
-from threading import RLock, Thread, Event, Condition, Semaphore
+from threading import RLock, Thread, Event, Condition, Semaphore, currentThread
 import time
 import sys
 
 Waiting = []
 In = []
 
+def threadName():
+    t = currentThread()
+    return str(t)
+
 def synchronized(method):
     def smethod(self, *params, **args):
-        #print "@synchronized: wait %s..." % (method,)
-        q = "%s(%x).@synch(%s)" % (self, id(self), method)
-        Waiting.append(q)
         with self:
-            Waiting.remove(q)
-            #print "@synchronized: in %s" % (method,)
-            In.append(q)
             out = method(self, *params, **args)
-        #print "@synchronized: out %s" % (method,)
-        In.remove(q)
         return out
     return smethod
 
 def gated(method):
     def smethod(self, *params, **args):
-        #print "@synchronized: wait %s..." % (method,)
-        q = "%s(%x).@gated(%s)" % (self, id(self), method)
-        Waiting.append(q)
         with self._Gate:
-            Waiting.remove(q)
-            #print "@synchronized: in %s" % (method,)
-            In.append(q)
             out = method(self, *params, **args)
-        #print "@synchronized: out %s" % (method,)
-        In.remove(q)
         return out
     return smethod
 
@@ -49,14 +37,30 @@ class Primitive:
         self._Lock = lock if lock is not None else RLock()
         self._WakeUp = Condition(self._Lock)
         self._Gate = Semaphore(gate)
+        self._Kind = self.__class__.__name__
+        
+    def __str__(self):
+        return "[%s@%x]" % (self.kind, id(self))
+
+    def __get_kind(self):
+        return self._Kind
+
+    def __set_kind(self, kind):
+        self._Kind = kind
+
+    kind = property(__get_kind, __set_kind)
 
     def getLock(self):
         return self._Lock
         
     def __enter__(self):
+        #t = currentThread()
+        #print ">>>entry by thread %s %x: %s %x..." % (t.__class__.__name__, id(t), self.kind, id(self))
         return self._Lock.__enter__()
         
     def __exit__(self, exc_type, exc_value, traceback):
+        #t = currentThread()
+        #print "<<<<exit by thread %s %x: %s %x" % (t.__class__.__name__, id(t), self.kind, id(self))
         return self._Lock.__exit__(exc_type, exc_value, traceback)
 
     @synchronized
