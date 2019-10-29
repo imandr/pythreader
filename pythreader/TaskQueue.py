@@ -127,7 +127,9 @@ class TaskQueue(Primitive):
     def startThreads(self):
         #print "startThreads() entry"
         if not self.Held:
-            while self.Queue and len(self.Threads) < self.NWorkers and not self.Held:
+            while self.Queue \
+                    and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
+                    and not self.Held:
                 if self.Stagger > 0.0 and time.time() < self.LastStart + self.Stagger:
                     #print "arming timer..."
                     self.armStartTimer()
@@ -162,8 +164,6 @@ class TaskQueue(Primitive):
     @synchronized
     def waitingTasks(self):
         return list(self.Queue.items())
-        
-    
         
     @synchronized
     def hold(self):

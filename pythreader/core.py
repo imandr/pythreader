@@ -93,6 +93,10 @@ class PyThread(Thread, Primitive):
         self.Params = params
         self.Args = args
         
+    def start(self):
+        Thread.start(self)
+        return self
+        
     def run(self):
         if self.Func is not None:
             self.Func(*self.Params, **self.Args)
