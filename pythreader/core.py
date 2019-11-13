@@ -5,6 +5,9 @@ import sys
 Waiting = []
 In = []
 
+class Timeout(Exception):
+    pass
+
 def threadName():
     t = currentThread()
     return str(t)
