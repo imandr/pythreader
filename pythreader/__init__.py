@@ -1,10 +1,11 @@
 from .core import Primitive, synchronized, PyThread, gated, TimerThread, Timeout
 from .dequeue import DEQueue
 from .TaskQueue import TaskQueue, Task
+from .Scheduler import Scheduler
 from .Subprocess import Subprocess, ShellCommand
 from .RWLock import RWLock
 from .Version import Version
-from .future import Future
+from .promise import Promise
 
 
 __version__ = Version
@@ -24,5 +25,6 @@ __all__ = [
     'ShellCommand',
     'Version', '__version__', 'version_info',
     'Timeout',
-    'Future'
+    'Promise',
+    'Scheduler'
 ]

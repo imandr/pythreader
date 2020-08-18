@@ -12,7 +12,7 @@ if __name__ == '__main__':
         def printStats(cls, lock):
             with cls.Interlock:
                 exclusive, shared = lock.owners()
-                print exclusive, len(shared)
+                print (exclusive, len(shared))
                 
         
         def __init__(self, lock):

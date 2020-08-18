@@ -1,8 +1,8 @@
-from .core import Primitive, synchronized
+from .core import Primitive, synchronized, Timeout
 
-class Future(Primitive):
+class Promise(Primitive):
     
-    def __init__(self, data, callbacks = []):
+    def __init__(self, data=None, callbacks = []):
         Primitive.__init__(self)
         self.Data = data
         self.Callbacks = callbacks[:]
@@ -17,12 +17,13 @@ class Future(Primitive):
         self.Callbacks.append(cb)            
         
     @synchronized
-    def complete(self, result):
+    def complete(self, result=None):
         self.Result = result
         self.Complete = True
         if not self.Canceled:
             for cb in self.Callbacks:
-                cb(self, t)
+                if cb(self) == "stop":
+                    break
         self.Callbacks = []
         self.wakeup()
     
@@ -36,12 +37,14 @@ class Future(Primitive):
         self.wakeup()
         
     @synchronized
-    def result(self, timeout=None):
+    def wait(self, timeout=None):
         t1 = None if timeout is None else time.time() + timeout
         while not self.Complete and not self.Canceled and (t1 is None or time.time() < t1):
             dt = None if t1 is None else max(0.0, t1 - time.time())
             self.sleep(dt)
         if self.Complete:
             return self.Result
-        else:
+        elif self.Canceled:
             return None
+        else:
+            raise Timeout()

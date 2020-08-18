@@ -35,6 +35,17 @@ def printWaiting():
     for w in In:
         print(w)
 
+class UnlockContext(object):
+    
+    def __init__(self, prim):
+        self.Prim = prim
+        
+    def __enter__(self):
+        self.Prim._Lock.__exit__(None, None, None)
+        
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.Prim._Lock.__enter__()    
+
 class Primitive:
     def __init__(self, gate=1, lock=None):
         self._Lock = lock if lock is not None else RLock()
@@ -65,6 +76,10 @@ class Primitive:
         #t = currentThread()
         #print "<<<<exit by thread %s %x: %s %x" % (t.__class__.__name__, id(t), self.kind, id(self))
         return self._Lock.__exit__(exc_type, exc_value, traceback)
+    
+    @property
+    def unlock(self):
+        return UnlockContext(self)
 
     @synchronized
     def sleep(self, timeout = None, function=None, arguments=()):

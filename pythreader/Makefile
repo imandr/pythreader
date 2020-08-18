@@ -1,6 +1,6 @@
 FILES = \
     core.py  __init__.py  dequeue.py  Subprocess.py  TaskQueue.py Version.py \
-    RWLock.py future.py
+    RWLock.py promise.py Scheduler.py
 
 LIB_DIR = $(BUILD_DIR)/pythreader
 
