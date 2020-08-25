@@ -1,5 +1,5 @@
 from .core import PyThread, synchronized
-import time, uuid
+import time, uuid, traceback
 import sys
 
 class Scheduler(PyThread):
