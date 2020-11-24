@@ -89,7 +89,7 @@ class Primitive:
 
     # await is a reserved word in Python 3, use "wakeup" instead
     @synchronized
-    def wakeup(self, n=1, all=False, function=None, arguments=()):
+    def wakeup(self, n=1, all=True, function=None, arguments=()):
         if function is not None:
             function(*arguments)
         if all:

@@ -1,4 +1,4 @@
-import time
+import time, traceback, sys
 from .core import Primitive, PyThread, synchronized
 from .dequeue import DEQueue
 from threading import Timer
@@ -67,12 +67,17 @@ class TaskQueue(Primitive):
                     task()
                 else:
                     task.run()
-            finally:
                 task.end()
+                self.Queue.taskEnded(self.Task)
+            except:
+                task.end()
+                exc_type, value, tb = sys.exc_info()
+                self.Queue.taskFailed(self.Task, exc_type, value, tb)
+            finally:
                 self.Queue.threadEnded(self)
                 self.Queue = None
                     
-    def __init__(self, nworkers, capacity=None, stagger=None, tasks = []):
+    def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None):
         Primitive.__init__(self)
         self.NWorkers = nworkers
         self.Threads = []
@@ -81,6 +86,7 @@ class TaskQueue(Primitive):
         self.Stagger = stagger or 0.0
         self.LastStart = 0.0
         self.StartTimer = None
+        self.Delegate = delegate
         for t in tasks:
             self.addTask(t)
 
@@ -148,10 +154,25 @@ class TaskQueue(Primitive):
             
     @synchronized
     def threadEnded(self, t):
+        #print("queue.threadEnded: ", t)
         if t in self.Threads:
             self.Threads.remove(t)
         self.startThreads()
         self.wakeup()
+        
+    def taskEnded(self, task):
+        if self.Delegate is not None:
+            self.Delegate.taskEnded(self, task)
+            
+    def taskFailed(self, task, exc_type, exc_value, tb):
+        if self.Delegate is None:
+            sys.stdout.write("Exception in task %s:\n" % (task, ))
+            traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
+        else:
+            try:
+                self.Delegate.taskFailed(self, task,  exc_type, exc_value, tb)
+            except:
+                traceback.print_exc(file=sys.stderr)
             
     @synchronized
     def tasks(self):
@@ -183,6 +204,8 @@ class TaskQueue(Primitive):
         if not self.isEmpty():
             while not self.sleep(function=self.isEmpty):
                 pass
+                
+    join = waitUntilEmpty
                 
     def drain(self):
         self.hold()

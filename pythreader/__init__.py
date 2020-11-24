@@ -6,6 +6,8 @@ from .Subprocess import Subprocess, ShellCommand
 from .RWLock import RWLock
 from .Version import Version
 from .promise import Promise
+from .processor import Processor
+from .flag import Flag
 
 
 __version__ = Version
