@@ -88,3 +88,30 @@ class Promise(Primitive):
         self.Callbacks = []
         self.OnCancel = self.OnException = self.OnDone = None
     
+class ORPromise(Primitive):
+    
+    def __init__(self, promises):
+        Primitive.__init__(self)
+        self.Fulfilled = None
+        for p in promises:
+            p.addCallback(self, promise_callback)
+
+    @synchronized
+    def promise_callback(self, promise):
+        self.Fulfilled = promise
+        self.wakeup()
+    
+    @synchronized
+    def wait(self, timeout = None):
+        while self.Fulfilled is None:
+            self.sleep(timeout)
+        return sef.Fulfilled
+
+class ANDPromise(Primitive):
+    
+    def __init__(self, promises):
+        Primitive.__init__(self)
+        self.Promises = promises
+        
+    def wait(self, timeout=None):
+        return [p.wait(timeout) for p in self.Promises]

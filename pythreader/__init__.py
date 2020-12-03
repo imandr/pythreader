@@ -8,6 +8,7 @@ from .Version import Version
 from .promise import Promise
 from .processor import Processor
 from .flag import Flag
+from .gate import Gate
 
 
 __version__ = Version
@@ -28,5 +29,6 @@ __all__ = [
     'Version', '__version__', 'version_info',
     'Timeout',
     'Promise',
-    'Scheduler'
+    'Scheduler',
+    'Gate'
 ]
