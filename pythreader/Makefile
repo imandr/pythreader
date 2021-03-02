@@ -1,5 +1,5 @@
 FILES = \
-    core.py  __init__.py  dequeue.py  Subprocess.py  TaskQueue.py Version.py \
+    core.py  __init__.py  dequeue.py  Subprocess.py  task_queue.py Version.py \
     RWLock.py promise.py Scheduler.py processor.py gate.py flag.py
 
 LIB_DIR = $(BUILD_DIR)/pythreader

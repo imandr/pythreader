@@ -1,7 +1,7 @@
 from .core import Primitive, synchronized
 from .promise import Promise
 from .dequeue import DEQueue
-from .TaskQueue import Task, TaskQueue
+from .task_queue import Task, TaskQueue
 
 class Gate(Primitive):
 

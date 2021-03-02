@@ -108,7 +108,7 @@ class TaskQueue(Primitive):
         self.startThreads()
         return self
         
-    def __rrshift__(self, task):
+    def __rshift__(self, task):
         return self.insertTask(task)
         
     @synchronized
@@ -121,7 +121,7 @@ class TaskQueue(Primitive):
                 self.startThreads()
                 #print "fire: done"
         if self.StartTimer is None:
-            delta = max(0.0, self.LastStart + self.Stagger - time.time())
+            delta = max(0.0, self.LastStart + self.Stagger - time.time() - 0.1)
             self.StartTimer = Timer(delta, fire)
             self.StartTimer.start()
         else:
@@ -136,19 +136,22 @@ class TaskQueue(Primitive):
             while self.Queue \
                     and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
                     and not self.Held:
-                if self.Stagger > 0.0 and time.time() < self.LastStart + self.Stagger:
+                if self.Stagger > 0.0:
+                    delta = self.LastStart + self.Stagger - time.time()
                     #print "arming timer..."
-                    self.armStartTimer()
-                    break
-                else:
-                    # start next thread
-                    #print "staring thread..."
-                    task = self.Queue.pop()
-                    t = self.ExecutorThread(self, task)
-                    t.kind = "%s.task" % (self.kind,)
-                    self.Threads.append(t)
-                    t.start()
-                    self.LastStart = time.time()
+                    if delta > 0.1:
+                        self.armStartTimer()
+                        break
+                    elif delta > 0.0:
+                        time.sleep(delta)
+                # start next thread
+                #print "staring thread..."
+                self.LastStart = time.time()
+                task = self.Queue.pop()
+                t = self.ExecutorThread(self, task)
+                t.kind = "%s.task" % (self.kind,)
+                self.Threads.append(t)
+                t.start()
         #print "startThreads() exit"
                    
             

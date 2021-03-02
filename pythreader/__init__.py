@@ -1,6 +1,6 @@
 from .core import Primitive, synchronized, PyThread, gated, TimerThread, Timeout
 from .dequeue import DEQueue
-from .TaskQueue import TaskQueue, Task
+from .task_queue import TaskQueue, Task
 from .Scheduler import Scheduler
 from .Subprocess import Subprocess, ShellCommand
 from .RWLock import RWLock
@@ -15,7 +15,7 @@ __version__ = Version
 version_info = tuple(Version.split("."))
 
 
-__all__ = [
+__a_ll__ = [
     'Primitive',
     'PyThread',
     'TimerThread',

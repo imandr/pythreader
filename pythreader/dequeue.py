@@ -94,8 +94,9 @@ class DEQueue(Primitive):
         self.List = []
         self.wakeup()
         
+    @synchronized
     def items(self):
-        return self.List
+        return self.List[:]
         
     @synchronized
     def look(self):
@@ -110,7 +111,10 @@ class DEQueue(Primitive):
                 return x
         return None
         
-    @synchronized
+    
+    def empty(self):
+        return not self.List
+        
     def __len__(self):
         return len(self.List)
         

@@ -1,6 +1,6 @@
 from .core import Primitive, synchronized
 from .dequeue import DEQueue
-from .TaskQueue import Task, TaskQueue
+from .task_queue import Task, TaskQueue
 import sys, traceback
 
 class WorkerTask(Task):
