@@ -55,7 +55,7 @@ class TaskQueue(Primitive):
     
     class ExecutorThread(PyThread):
         def __init__(self, queue, task):
-            PyThread.__init__(self)
+            PyThread.__init__(self, daemon=True)
             self.Queue = queue
             self.Task = task
             
