@@ -173,6 +173,12 @@ class TaskQueue(Primitive):
     def activeTasks(self):
         return [t.Task for t in self.Threads]
         
+    def nrunning(self):
+        return len(self.Threads)
+        
+    def counts(self):
+        return len(self.Queue), len(self.Threads)
+        
     @synchronized
     def waitingTasks(self):
         return list(self.Queue.items())
