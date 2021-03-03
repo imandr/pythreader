@@ -104,24 +104,13 @@ if sys.version_info < (3,0):
 
 
 class PyThread(Thread, Primitive):
-    def __init__(self, func=None, *params, **args):
-        Thread.__init__(self)
+    def __init__(self, *params, **args):
+        Thread.__init__(self, *params, **args)
         Primitive.__init__(self)
-        self.Func = func
-        self.Params = params
-        self.Args = args
-        
-    def start(self):
-        Thread.start(self)
-        return self
-        
-    def run(self):
-        if self.Func is not None:
-            self.Func(*self.Params, **self.Args)
 
 class TimerThread(PyThread):
     def __init__(self, function, interval, *params, **args):
-        PyThread.__init__(self)
+        PyThread.__init__(self, daemon=True)
         self.Interval = interval
         self.Func = function
         self.Params = params
@@ -130,7 +119,7 @@ class TimerThread(PyThread):
 
     def run(self):
         while True:
-            if self.Pause:
+            while self.Pause:
                 self.sleep()
             self.Func(*self.Params, **self.Args)
             time.sleep(self.Interval)

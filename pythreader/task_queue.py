@@ -81,6 +81,7 @@ class TaskQueue(Primitive):
         self.Delegate = delegate
         self.ShutDown = False
         self.GetLock = RLock()
+        self.Held = False
         self.Workers = [_Worker(self) for _ in range(nworkers)]
         for t in tasks:
             self.addTask(t)
@@ -121,17 +122,26 @@ class TaskQueue(Primitive):
         self.Queue.close()
         self.wakeup()
         
+    def hold(self):
+        self.Held = True
+        
+    def release(self):
+        self.Held = False
+        self.wakeup()
+        
     def nextTask(self):
+        if self.Closed:
+            return None
         with self.GetLock:
-            while len(self.Queue) == 0 and not self.Closed:
-                self.sleep()
-            if self.Queue.empty():
-                return None
             if self.Stagger:
                 now = time.time()
                 tnext = self.LastStart + self.Stagger
                 if now < tnext:
                     time.sleep(tnext - now)
+            while (self.Held or self.Queue.empty()) and not self.Closed:
+                self.sleep()
+            if self.Closed:
+                return None
             task = self.Queue.pop()
             if task is not None:
                 self.Running.append(task)
