@@ -1,7 +1,7 @@
 import time, traceback, sys
 from .core import Primitive, PyThread, synchronized
 from .dequeue import DEQueue
-from threading import RLock
+from threading import Timer
 
 class Task(Primitive):
 
@@ -31,6 +31,14 @@ class Task(Primitive):
     def ended(self):
         return self._t_Started is not None and self._t_Ended is not None
         
+    @synchronized
+    def start(self):
+        self._t_Started = time.time()
+        
+    @synchronized
+    def end(self):
+        self._t_Ended = time.time()
+
 class FunctionTask(Task):
 
     def __init__(self, fcn, *params, **args):
@@ -42,63 +50,53 @@ class FunctionTask(Task):
     def run(self):
         return self.F(*self.Params, **self.Args)
         
-class _Worker(PyThread):
     
-    def __init__(self, queue):
-        PyThread.__init__(self)
-        self.Queue = queue
-        
-    def run(self):
-        while not self.Queue.ShutDown:
-            task = self.Queue.nextTask()
-            if task is None:
-                break
-            exc_type, value, tb = None, None, None
-            self.Queue.taskStarted(task)            
+class TaskQueue(Primitive):
+    
+    class ExecutorThread(PyThread):
+        def __init__(self, queue, task):
+            PyThread.__init__(self)
+            self.Queue = queue
+            self.Task = task
+            
+        def run(self):
+            task = self.Task
+            task.start()
             try:
                 if callable(task):
                     task()
                 else:
-                    task._t_Started = time.time()
                     task.run()
+                task.end()
+                self.Queue.taskEnded(self.Task)
             except:
+                task.end()
                 exc_type, value, tb = sys.exc_info()
+                self.Queue.taskFailed(self.Task, exc_type, value, tb)
             finally:
-                if not callable(task):
-                    task._t_Ended = time.time()
-                self.Queue.taskEnded(task, exc_type, value, tb)
-        
-class TaskQueue(Primitive):
-    
-    def __init__(self, nworkers, capacity=None, stagger=None, delegate=None, tasks=[]):
+                self.Queue.threadEnded(self)
+                self.Queue = None
+                    
+    def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None):
         Primitive.__init__(self)
         self.NWorkers = nworkers
-        self.Running = []
+        self.Threads = []
         self.Queue = DEQueue(capacity)
-        self.Closed = False
+        self.Held = False
         self.Stagger = stagger or 0.0
         self.LastStart = 0.0
+        self.StartTimer = None
         self.Delegate = delegate
-        self.ShutDown = False
-        self.GetLock = RLock()
-        self.Held = False
-        self.Workers = [_Worker(self) for _ in range(nworkers)]
         for t in tasks:
             self.addTask(t)
-        for w in self.Workers:
-            w.daemon = True
-            w.start()
-        
 
     def addTask(self, task, timeout = None):
-        if self.Closed:
-            raise RunTimeError("Queue closed")
+        #print "addTask() entry"
         self.Queue.append(task, timeout=timeout)
-        self.wakeup(all=False)
+        #print "queue.append done"
+        self.startThreads()
         return self
         
-    append = addTask
-
     def __iadd__(self, task):
         return self.addTask(task)
         
@@ -106,126 +104,109 @@ class TaskQueue(Primitive):
         return self.addTask(task)
         
     def insertTask(self, task, timeout = None):
-        if self.Closed:
-            raise RunTimeError("Queue closed")
-        self.Queue.insert(task, timeout=timeout)
-        self.wakeup(all=False)
+        self.Queue.insert(task, timeout = timeout)
+        self.startThreads()
         return self
         
-    insert = insertTask
-        
-    def __rrshift__(self, task):
+    def __rshift__(self, task):
         return self.insertTask(task)
         
-    def close(self):
-        self.Closed = True
-        self.Queue.close()
-        self.wakeup()
-        
-    def hold(self):
-        self.Held = True
-        
-    def release(self):
-        self.Held = False
-        self.wakeup()
-        
-    def nextTask(self):
-        if self.Closed:
-            return None
-        with self.GetLock:
-            if self.Stagger:
-                now = time.time()
-                tnext = self.LastStart + self.Stagger
-                if now < tnext:
-                    time.sleep(tnext - now)
-            while (self.Held or self.Queue.empty()) and not self.Closed:
-                self.sleep()
-            if self.Closed:
-                return None
-            task = self.Queue.pop()
-            if task is not None:
-                self.Running.append(task)
-            self.LastStart = time.time()
-            self.wakeup()
-            return task
-        
-    def taskStarted(self, task):
-        if self.Delegate is not None:
-            self.Delegate.taskStarted(self, task)
-        
-    def taskEnded(self, task, exc_type, exc_value, tb):
-        with self:
-            while task in self.Running:
-                self.Running.remove(task)
-
-        self.wakeup()
-        if exc_type is not None:
-            if self.Delegate is None:
-                sys.stdout.write("Exception in task %s:\n" % (task, ))
-                traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
-            else:
-                try:
-                    self.Delegate.taskFailed(self, task,  exc_type, exc_value, tb)
-                except:
-                    traceback.print_exc(file=sys.stderr)
-        else:
-            if self.Delegate is not None:
-                self.Delegate.taskEnded(self, task)
-                
-    def nrunning(self):
-        return len(self.Running)
-        
-    def counts(self):
-        return len(self.Queue), len(self.Running)
-        
-    def flush(self):
-        self.Queue.flush()
+    @synchronized
+    def timer_fired(self):
+        self.StartTimer = None
+        self.startThreads()
         
     @synchronized
-    def tasks(self):
-        return self.Queue.items(), self.Running[:]
+    def startThreads(self):
+        #print "startThreads() entry"
+        if not self.Held:
+            while self.Queue \
+                    and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
+                    and not self.Held:
+                if self.Stagger > 0.0:
+                    delta = self.LastStart + self.Stagger - time.time()
+                    #print "arming timer..."
+                    if delta > 0.0:
+                        if self.StartTimer is None:
+                            self.StartTimer = Timer(delta, self.timer_fired)
+                            self.StartTimer.daemon = True
+                            self.StartTimer.start()
+                        break
+                # start next thread
+                #print "staring thread..."
+                self.LastStart = time.time()
+                task = self.Queue.pop()
+                t = self.ExecutorThread(self, task)
+                t.kind = "%s.task" % (self.kind,)
+                self.Threads.append(t)
+                t.start()
+        #print "startThreads() exit"
+                   
             
     @synchronized
+    def threadEnded(self, t):
+        #print("queue.threadEnded: ", t)
+        if t in self.Threads:
+            self.Threads.remove(t)
+        self.startThreads()
+        self.wakeup()
+        
+    def taskEnded(self, task):
+        if self.Delegate is not None:
+            self.Delegate.taskEnded(self, task)
+            
+    def taskFailed(self, task, exc_type, exc_value, tb):
+        if self.Delegate is None:
+            sys.stdout.write("Exception in task %s:\n" % (task, ))
+            traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
+        else:
+            try:
+                self.Delegate.taskFailed(self, task,  exc_type, exc_value, tb)
+            except:
+                traceback.print_exc(file=sys.stderr)
+            
+    @synchronized
+    def tasks(self):
+        return list(self.Queue.items()), [t.Task for t in self.Threads]
+        
+    @synchronized
     def activeTasks(self):
-        return self.Running[:]
+        return [t.Task for t in self.Threads]
         
     @synchronized
     def waitingTasks(self):
-        return self.Queue.items()
- 
+        return list(self.Queue.items())
+        
+    @synchronized
+    def hold(self):
+        self.Held = True
+        
+    @synchronized
+    def release(self):
+        self.Held = False
+        self.startThreads()
+        
     @synchronized
     def isEmpty(self):
-        empty = len(self.Queue) == 0 and not self.Running
-        return empty
+        return len(self.Queue) == 0 and len(self.Threads) == 0
                 
-    @synchronized
     def waitUntilEmpty(self):
         # wait until all tasks are done and the queue is empty
-        while not self.isEmpty():
-            self.sleep()
-
+        if not self.isEmpty():
+            while not self.sleep(function=self.isEmpty):
+                pass
                 
     join = waitUntilEmpty
                 
+    def drain(self):
+        self.hold()
+        self.waitUntilEmpty()
+                
+    @synchronized
+    def flush(self):
+        self.Queue.flush()
+        self.wakeup()
+            
     def __len__(self):
         return len(self.Queue)
-        
-    def destroy(self):
-        self.ShutDown = True
-        self.Workers = None
 
-if __name__ == '__main__':
-    
-    class T(Task):
-        
-        def __init__(self, i):
-            Task.__init__(self)
-            self.I = i
-        
-        def run(self):
-            time.sleep(0.15)
-            print("Task", self.I)
-    
-    q = TaskQueue(3, capacity=5, stagger=0.1)
-    for _ in range(100):
-        q << T()
