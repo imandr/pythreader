@@ -1,9 +1,31 @@
 from .core import Primitive, synchronized, Timeout
+from threading import get_ident, RLock
+
+class DebugLock(object):
+    
+    def __init__(self):
+        self.R = RLock()
+        
+    def acquire(self, *params, **args):
+        print(self, "acquire by ", get_ident(), "...")
+        self.R.acquire(*params, **args)
+        print(self, "acquired by ", get_ident())
+        
+    def release(self):
+        print(self, "released by ", get_ident())
+        self.R.release()
+        
+    def __enter__(self):
+        return self.acquire()
+        
+    def __exit__(self, *params):
+        return self.release()
+    
 
 class Promise(Primitive):
     
-    def __init__(self, data=None, callbacks = []):
-        Primitive.__init__(self)
+    def __init__(self, data=None, callbacks = [], name=None):
+        Primitive.__init__(self, name=name)    #, lock=DebugLock())
         self.Data = data
         self.Callbacks = callbacks[:]
         self.Complete = False
@@ -11,7 +33,9 @@ class Promise(Primitive):
         self.Result = None
         self.ExceptionInfo = None     # or tuple (exc_type, exc_value, exc_traceback)
         self.OnDone = self.OnCancel = self.OnException = None
-
+        self.Chained = []
+        self.Name = name
+        
     @synchronized
     def ondone(self, cb):
         self.OnDone = cb
@@ -35,8 +59,26 @@ class Promise(Primitive):
         self.ExceptionInfo = (exc_type, exc_value, exc_traceback)
         if self.OnException is not None:
             self.OnExceptipn(self)
+        for p in self.Chained:
+            p.exception(exc_type, exc_value, exc_traceback)
         self.wakeup()
         self._cleanup()
+
+    @synchronized
+    def chain(self, *promises):
+        if self.ExceptionInfo:
+            exc_type, exc_value, exc_traceback = self.ExceptionInfo
+            for p in promises:
+                p.exception(exc_type, exc_value, exc_traceback)
+        elif self.Complete:
+            for p in promises:
+                p.complete(self.Result)
+        elif self.Canceled:
+            for p in promises:
+                p.complete(None)
+        else:
+            self.Chained += list(promises)
+        return self
         
     @synchronized
     def complete(self, result=None):
@@ -48,7 +90,10 @@ class Promise(Primitive):
             for cb in self.Callbacks:
                 if cb(self) == "stop":
                     break
-        self.Callbacks = []
+        for p in self.Chained:
+            #print("%s: complete(%s) ..." % (self, p))
+            p.complete(result)
+            #print("%s: complete(%s) done" % (self, p))
         self.wakeup()
         self._cleanup()
     
@@ -60,15 +105,16 @@ class Promise(Primitive):
         self.Canceled = True
         if self.OnCancel is not None:
             self.OnCancel(self)
+        for p in self.Chained:
+            p.cancel(result)
         self.wakeup()
         self._cleanup()
         
     @synchronized
     def wait(self, timeout=None):
-        t1 = None if timeout is None else time.time() + timeout
-        while not self.Complete and not self.Canceled and self.ExceptionInfo is None and (t1 is None or time.time() < t1):
-            dt = None if t1 is None else max(0.0, t1 - time.time())
-            self.sleep(dt)
+        #print("thread %s: wait(%s)..." % (get_ident(), self))
+        pred = lambda x: x.Complete or x.Canceled or self.ExceptionInfo is not None
+        self.sleep_until(pred, self, timeout=timeout)
         try:
             if self.Complete:
                 return self.Result
@@ -83,8 +129,8 @@ class Promise(Primitive):
             self._cleanup()
             
             
-    @synchronized
     def _cleanup(self):
+        self.Chained = []
         self.Callbacks = []
         self.OnCancel = self.OnException = self.OnDone = None
     

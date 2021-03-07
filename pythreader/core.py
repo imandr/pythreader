@@ -1,4 +1,4 @@
-from threading import RLock, Thread, Event, Condition, Semaphore, currentThread
+from threading import RLock, Thread, Event, Condition, Semaphore, currentThread, get_ident
 import time
 import sys
 
@@ -14,8 +14,11 @@ def threadName():
 
 def synchronized(method):
     def smethod(self, *params, **args):
+        me = get_ident()
+        #print("entering synchronized", self, me)
         with self:
             out = method(self, *params, **args)
+        #print("exiting synchronized", self, me)
         return out
     return smethod
 
@@ -47,14 +50,17 @@ class UnlockContext(object):
         self.Prim._Lock.__enter__()    
 
 class Primitive:
-    def __init__(self, gate=1, lock=None):
+    def __init__(self, gate=1, lock=None, name=None):
+        self._Kind = self.__class__.__name__
         self._Lock = lock if lock is not None else RLock()
+        #print ("Primitive:", self, " _Lock:", self._Lock)
         self._WakeUp = Condition(self._Lock)
         self._Gate = Semaphore(gate)
-        self._Kind = self.__class__.__name__
+        self.Name = name
         
     def __str__(self):
-        return "[%s@%x]" % (self.kind, id(self))
+        ident = ('"%s"' % (self.Name,)) or ("@%s" % (("%x" % (id(self),))[-4:],))
+        return "[%s %s]" % (self.kind, ident)
 
     def __get_kind(self):
         return self._Kind
@@ -83,10 +89,25 @@ class Primitive:
 
     @synchronized
     def sleep(self, timeout = None, function=None, arguments=()):
+        #print("sleep", self, get_ident(), "   condition lock:", self._WakeUp._lock, "...")
         self._WakeUp.wait(timeout)
         if function is not None:
             return function(*arguments)
 
+    @synchronized
+    def sleep_until(self, predicate, *params, timeout = None, **args):
+        #print("sleep", self, get_ident(), "   condition lock:", self._WakeUp._lock, "...")
+        t1 = None if timeout is None else time.time() + timeout
+        while (t1 is None or time.time() < t1):
+            if predicate(*params, **args):
+                return
+            delta = None
+            if t1 is not None:
+                delta = max(0.0, t1 - time.time())
+            self.sleep(delta)
+        else:
+            raise Timeout()
+            
     # await is a reserved word in Python 3, use "wakeup" instead
     @synchronized
     def wakeup(self, n=1, all=True, function=None, arguments=()):
@@ -104,9 +125,9 @@ if sys.version_info < (3,0):
 
 
 class PyThread(Thread, Primitive):
-    def __init__(self, *params, **args):
+    def __init__(self, *params, name=None, **args):
         Thread.__init__(self, *params, **args)
-        Primitive.__init__(self)
+        Primitive.__init__(self, name=name)
 
 class TimerThread(PyThread):
     def __init__(self, function, interval, *params, **args):

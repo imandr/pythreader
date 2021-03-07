@@ -15,15 +15,11 @@ class Flag(Primitive):
         
     value = property(get, set)
         
-    def sleep(self, until=None, timeout = None):
-        if until is None:
-            until = lambda x: x
-        done = False
-        while not done:
-            with self:
-                v = self._Value
-                done = until(v)
-            if not done:
-                Primitive.sleep(self, timeout)
+    def sleep_until(self, value=None, predicate=None, timeout = None):
+        if value is not None:
+            predicate = lambda x, v=value: x == v
+        if predicate is None:
+            predicate = lambda x: not not x     # default: wait until the value evaluates to True
+        return self.sleep_until(lambda flag: predicate(flag.Value), self, timeout=timeout)
                 
             
