@@ -3,12 +3,30 @@ from .core import Primitive, PyThread, synchronized
 from .dequeue import DEQueue
 from threading import Timer
 
+class TaskQueueDelegate(object):
+    
+    # abstract class
+    
+    def taskIsStarting(self, queue, task):
+        pass
+
+    def taskStarted(self, queue, task):
+        pass
+
+    def taskEnded(self, queue, task, result):
+        pass
+
+    def taskFailed(self, queue, task, exc_type, exc_value, tback):
+        pass
+
 class Task(Primitive):
 
     def __init__(self):
         Primitive.__init__(self)
-        self._t_Started = None
-        self._t_Ended = None
+        self.Created = time.time()
+        self.Queued = None
+        self.Started = None
+        self.Ended = None
     
     #def __call__(self):
     #    pass
@@ -16,28 +34,28 @@ class Task(Primitive):
     def run(self):
         raise NotImplementedError
         
-    @synchronized
     @property
-    def started(self):
-        return self._t_Started is not None
+    def has_started(self):
+        return self.Started is not None
         
     @synchronized
     @property
-    def running(self):
-        return self._t_Started is not None and self._t_Ended is None
+    def is_running(self):
+        return self.Started is not None and self.Ended is None
         
     @synchronized
     @property
-    def ended(self):
-        return self._t_Started is not None and self._t_Ended is not None
+    def has_ended(self):
+        return self.Started is not None and self.Ended is not None
         
-    @synchronized
     def start(self):
-        self._t_Started = time.time()
+        self.Started = time.time()
         
-    @synchronized
     def end(self):
-        self._t_Ended = time.time()
+        self.Ended = time.time()
+        
+    def enqueue(self):
+        self.Queued = time.time()
 
 class FunctionTask(Task):
 
@@ -50,7 +68,6 @@ class FunctionTask(Task):
     def run(self):
         return self.F(*self.Params, **self.Args)
         
-    
 class TaskQueue(Primitive):
     
     class ExecutorThread(PyThread):
@@ -64,11 +81,11 @@ class TaskQueue(Primitive):
             task.start()
             try:
                 if callable(task):
-                    task()
+                    result = task()
                 else:
-                    task.run()
+                    result = task.run()
                 task.end()
-                self.Queue.taskEnded(self.Task)
+                self.Queue.taskEnded(self.Task, result)
             except:
                 task.end()
                 exc_type, value, tb = sys.exc_info()
@@ -77,8 +94,8 @@ class TaskQueue(Primitive):
                 self.Queue.threadEnded(self)
                 self.Queue = None
                     
-    def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None):
-        Primitive.__init__(self)
+    def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None, name=None):
+        Primitive.__init__(self, name=name)
         self.NWorkers = nworkers
         self.Threads = []
         self.Queue = DEQueue(capacity)
@@ -93,7 +110,8 @@ class TaskQueue(Primitive):
     def addTask(self, task, timeout = None):
         #print "addTask() entry"
         self.Queue.append(task, timeout=timeout)
-        #print "queue.append done"
+        #print("queue.append done", self.counts())
+        task.enqueue()
         self.startThreads()
         return self
         
@@ -105,6 +123,7 @@ class TaskQueue(Primitive):
         
     def insertTask(self, task, timeout = None):
         self.Queue.insert(task, timeout = timeout)
+        task.enqueue()
         self.startThreads()
         return self
         
@@ -132,16 +151,15 @@ class TaskQueue(Primitive):
                             self.StartTimer.daemon = True
                             self.StartTimer.start()
                         break
-                # start next thread
-                #print "staring thread..."
                 self.LastStart = time.time()
                 task = self.Queue.pop()
                 t = self.ExecutorThread(self, task)
                 t.kind = "%s.task" % (self.kind,)
                 self.Threads.append(t)
+                self.call_delegate("taskIsStarting", self, task)
                 t.start()
-        #print "startThreads() exit"
-                   
+                self.call_delegate("taskStarted", self, task)
+                #print("thread started")
             
     @synchronized
     def threadEnded(self, t):
@@ -151,37 +169,43 @@ class TaskQueue(Primitive):
         self.startThreads()
         self.wakeup()
         
-    def taskEnded(self, task):
-        if self.Delegate is not None:
-            self.Delegate.taskEnded(self, task)
+    def call_delegate(self, cb, *params):
+        if self.Delegate is not None and hasattr(self.Delegate, cb):
+            try:    getattr(self.Delegate, cb)(*params)
+            except:
+                traceback.print_exc(file=sys.stderr)
             
+    def taskEnded(self, task, result):
+        self.call_delegate("taskEnded", self, task, result)
+        
     def taskFailed(self, task, exc_type, exc_value, tb):
         if self.Delegate is None:
             sys.stdout.write("Exception in task %s:\n" % (task, ))
             traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
         else:
-            try:
-                self.Delegate.taskFailed(self, task,  exc_type, exc_value, tb)
-            except:
-                traceback.print_exc(file=sys.stderr)
+            self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
             
     @synchronized
-    def tasks(self):
-        return list(self.Queue.items()), [t.Task for t in self.Threads]
+    def waitingTasks(self):
+        return list(self.Queue.items())
         
     @synchronized
     def activeTasks(self):
         return [t.Task for t in self.Threads]
         
+    @synchronized
+    def tasks(self):
+        return self.waitingTasks(), self.activeTasks()
+        
     def nrunning(self):
         return len(self.Threads)
         
-    def counts(self):
-        return len(self.Queue), len(self.Threads)
+    def nwaiting(self):
+        return len(self.Queue)
         
     @synchronized
-    def waitingTasks(self):
-        return list(self.Queue.items())
+    def counts(self):
+        return self.nwaiting(), self.nrunning()
         
     @synchronized
     def hold(self):

@@ -47,19 +47,22 @@ class Processor(Primitive):
     def __init__(self, max_workers = None, queue_capacity = None, name=None, output = None, stagger=None, delegate=None,
             put_timeout=None):
         Primitive.__init__(self, name=name)
-        #assert output is None or isinstance(output, Processor)
-        self.Name = name
         self.Output = output
         self.WorkerQueue = TaskQueue(max_workers, capacity=queue_capacity, stagger=stagger)
         self.PutTimeout = put_timeout
         self.Delegate = delegate
         self.OutputQueue = None
+        self.Closed = True
         
     def hold(self):
         self.WorkerQueue.hold()
 
     def release(self):
         self.WorkerQueue.release()
+        
+    def close(self):
+        self.Closed = True
+        self.WorkerQueue.close()
         
     def put(self, item, timeout=-1):
         if timeout == -1: timeout = self.PutTimeout
@@ -105,6 +108,20 @@ class Processor(Primitive):
         
     def activeTasks(self):
         return self.WorkerQueue.activeTasks()
+        
+    def tasks(self):
+        return self.WorkerQueue.tasks()
+        
+    def nrunning(self):
+        return self.WorkerQueue.nrunning()
+        
+    def nwaiting(self):
+        return self.WorkerQueue.nwaiting()
+        
+    def counts(self):
+        return self.WorkerQueue.counts()
+        
+        
         
     @synchronized
     def __iter__(self):
