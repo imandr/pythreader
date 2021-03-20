@@ -59,7 +59,7 @@ class Primitive:
         self.Name = name
         
     def __str__(self):
-        ident = ('"%s"' % (self.Name,)) or ("@%s" % (("%x" % (id(self),))[-4:],))
+        ident = ('"%s"' % (self.Name,)) if self.Name else ("@%s" % (("%x" % (id(self),))[-4:],))
         return "[%s %s]" % (self._Kind, ident)
 
     def __get_kind(self):

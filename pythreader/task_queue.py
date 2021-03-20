@@ -21,8 +21,8 @@ class TaskQueueDelegate(object):
 
 class Task(Primitive):
 
-    def __init__(self):
-        Primitive.__init__(self)
+    def __init__(self, name=None):
+        Primitive.__init__(self, name=name)
         self.Created = time.time()
         self.Queued = None
         self.Started = None
