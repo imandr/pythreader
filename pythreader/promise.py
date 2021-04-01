@@ -101,16 +101,6 @@ class Promise(Primitive):
         return self.Complete
         
     @synchronized
-    def cancel(self):
-        self.Canceled = True
-        if self.OnCancel is not None:
-            self.OnCancel(self)
-        for p in self.Chained:
-            p.cancel(result)
-        self.wakeup()
-        self._cleanup()
-        
-    @synchronized
     def wait(self, timeout=None):
         #print("thread %s: wait(%s)..." % (get_ident(), self))
         pred = lambda x: x.Complete or x.Canceled or self.ExceptionInfo is not None
