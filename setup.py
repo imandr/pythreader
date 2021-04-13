@@ -21,7 +21,7 @@ setup(
     author_email = "igorvm@gmail.com",
     description = ("A set of useful tools built on top of standard Python threading module"),
     license = "BSD 3-clause",
-    keywords = "threading, synchronization",
+    keywords = "threading, synchronization, multiprocessing, parallel computing",
     url = "https://github.com/imandr/pythreader",
     packages=['pythreader', 'tests'],
     long_description="A set of useful tools built on top of standard Python threading module", #read('README'),
@@ -29,8 +29,11 @@ setup(
         "Operating System :: POSIX",
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Programming Language :: Python",
-        "Development Status :: 4 - Beta",
+        "Topic :: Software Development :: Libraries",
+        "Development Status :: 5 - Production/Stable",
         "Topic :: Utilities",
         "License :: OSI Approved :: BSD License",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3"
     ]
 )
