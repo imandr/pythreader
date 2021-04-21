@@ -9,6 +9,7 @@ from .promise import Promise
 from .processor import Processor
 from .flag import Flag
 from .gate import Gate
+from .LogFile import LogFile, LogStream
 
 
 __version__ = Version
@@ -30,5 +31,5 @@ __a_ll__ = [
     'Timeout',
     'Promise',
     'Scheduler',
-    'Gate'
+    'Gate', 'LogFile', 'LogStream'
 ]
