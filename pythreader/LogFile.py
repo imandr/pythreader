@@ -21,12 +21,12 @@ class LogStream(Primitive):
     def log(self, msg, raw=False, add_timestamp=True):
         if add_timestamp and not raw:
             msg = "%s: %s" % (make_timestamp(), msg)
-        self.Stream.write(msg + '\n');
-        self.Stream.flush()
+        self.write(msg + '\n');
 
     @synchronized
     def write(self, msg):
-        self.log(msg, raw=True)
+        self.Stream.write(msg);
+        self.Stream.flush()
         
 class LogFile(PyThread):
 
@@ -35,7 +35,6 @@ class LogFile(PyThread):
                 # interval = 'midnight' means roll over at midnight
                 PyThread.__init__(self, name=name)
                 assert isinstance(path, str)
-                self._Lock = RLock()
                 self.Path = path
                 self.File = None
                 self.CurLogBegin = 0
