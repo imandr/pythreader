@@ -121,8 +121,6 @@ class Processor(Primitive):
     def counts(self):
         return self.WorkerQueue.counts()
         
-        
-        
     @synchronized
     def __iter__(self):
         if self.OutputQueue is not None:

@@ -20,6 +20,7 @@ def synchronized(method):
             out = method(self, *params, **args)
         #print("exiting synchronized", self, me)
         return out
+    smethod.__doc__ = method.__doc__
     return smethod
 
 def gated(method):
@@ -27,6 +28,7 @@ def gated(method):
         with self._Gate:
             out = method(self, *params, **args)
         return out
+    smethod.__doc__ = method.__doc__
     return smethod
 
 
