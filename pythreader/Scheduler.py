@@ -1,14 +1,78 @@
 from .core import PyThread, synchronized
-import time, uuid, traceback
+from .task_queue import Task, TaskQueue
+import time, uuid, traceback, random
 import sys
 
-class Scheduler(PyThread):
-    def __init__(self):
-        PyThread.__init__(self)
-        self.Tasks = {}     # id -> (function, t, interval, param, args)
+class Job(object):
+    
+    def __init__(self, id, interval, jitter, fcn, params, args):
+        self.F = fcn
+        self.Params = params or ()
+        self.Args = args or {}
+        self.ID = id
+        self.Interval = interval
+        self.Jitter = jitter or 0.0
+        
+    def __str__(self):
+        return f"Job({self.ID})"
+        
+    __repr__ = __str__
+        
+    def execute(self):
+        start = time.time()
+        next_t = self.F(*self.Params, **self.Args)
+        if next_t is None and self.Interval is not None:
+            next_t = start + self.Interval + random.random() * self.Jitter
+        return next_t
 
+class JobTask(Task):
+    
+    def __init__(self, scheduler, job):
+        Task.__init__(self, name=f"JobTask({job.ID})")
+        self.Scheduler = scheduler
+        self.Job = job
+
+    def __str__(self):
+        return f"JobTask({self.Job.ID})"
+
+    __repr__ = __str__
+
+    def run(self):
+        scheduler = self.Scheduler
+        try:
+            try:
+                next_t = self.Job.execute()
+            except:
+                print(f"Error in job {self.Job.ID}:", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                next_t = None
+            #print(self, "next_t:", next_t)
+            if next_t != "stop" and next_t is not None:
+                scheduler.resubmit(self.Job, next_t)
+            else:
+                scheduler.remove(self.Job)
+        finally:
+            self.Scheduler = None               # make sure to break circular references
+            self.Job = None
+
+class Scheduler(PyThread):
+    def __init__(self, max_concurrent = 100):
+        PyThread.__init__(self)
+        self.Timeline = []      # [(t, job), ...]
+        self.Jobs = {}     # id -> (function, t, interval, params, args)
+        self.Queue = TaskQueue(max_concurrent)
+        
+    @synchronized
+    def add_to_timeline(self, job, t):
+        self.Timeline = sorted([(t, j) for t, j in self.Timeline if j.ID != job.ID] + [(t, job)])
+        
+    @synchronized
+    def remove_from_timeline(self, job):
+        job_id = job.ID if isinstance(job, Job) else job
+        self.Timeline = [(t, j) for t, j in self.Timeline if j.ID != job_id]
+        
     @synchronized        
-    def add(self, fcn, interval=None, param=None, t0=None, id=None, **args):
+    def add(self, fcn, *params, interval=None, t0=None, id=None, jitter=0.0, param=None, **args):
         #
         # t0 - first time to run the task. Default:
         #   now + interval or now if interval is None
@@ -24,61 +88,58 @@ class Scheduler(PyThread):
         #       int or float - next time to run
         #       None - run at now+interval next time
         #
+        if param is not None:       # for backward compatibility
+            params = (param,)
         if id is None:
-            id = uuid.uuid1().hex
+            id = uuid.uuid4().hex
         if t0 is None:
-            t0 = time.time() + (interval or 0.0)
-        self.Tasks[id] = (fcn, t0, interval, param, args)
+            t0 = time.time() + (interval or 0.0) + random.random()*jitter
+        job = Job(id, interval, jitter, fcn, params, args)
+        self.Jobs[id] = job
+        self.add_to_timeline(job, t0)
         self.wakeup()
         return id
         
     @synchronized
-    def remove(self, tid):
-        if tid in self.Tasks:
-            del self.Tasks[tid]
+    def remove(self, job):
+        job_id = job.ID if isinstance(job, Job) else job
+        self.Jobs.pop(job_id, None)
+        #print("    timeline before:", *((j.ID, j.ID != job_id) for t, j in self.Timeline))
+        self.Timeline = [(t, j) for t, j in self.Timeline if j.ID != job_id]
+        #print("    timeline after :", *((j.ID, j.ID != job_id) for t, j in self.Timeline))
+        
+    @synchronized
+    def resubmit(self, job, t):
+        #print("resubmit before:", self.Timeline)
+        if job.ID in self.Jobs:
+            # make sure the job was not removed
+            self.add_to_timeline(job, t)
+            self.wakeup()
+        else:
+            #print("resubmit: job", job.ID, "not found")
+            pass
+        #print("resubmit after:", self.Timeline)
         
     @synchronized        
     def tick(self):
-        #print("tick: tasks:", self.Tasks)
-        
-        now = time.time()
-        tasks_to_run = []
-        for tid, (fcn, t, interval, param, args) in list(self.Tasks.items()):
-            if t <= now:
-                with self.unlock:
-                    next_t = None       # default
-                    try:
-                            if param is not None:
-                                next_t = fcn(param)
-                            elif args is not None:
-                                next_t = fcn(**args)
-                            else:
-                                next_t = fcn()
-                    except:
-                        sys.stderr.write(traceback.format_exc())
-                    #print("exiting unlock context...")
-                #print("tick: next_t=", next_t)
-                if tid in self.Tasks:
-                    # the task may have been unregistered from within fcn() call
-                    if next_t == "stop" or \
-                            next_t is None and (interval is None or interval < 0.0):
-                        del self.Tasks[tid]
-                        continue
-                    if next_t is None:
-                        next_t = now + interval
-                    #print("tick: next_t->", next_t)
-                    self.Tasks[tid] = (fcn, next_t, interval, param, args)
+        while self.Timeline:
+            t, job = self.Timeline[0]
+            if t <= time.time():
+                self.Timeline.pop(0)
+                self.Queue.addTask(JobTask(self, job))
+            else:
+                break
                         
     def run(self):
         while True:
             delta = 10.0
             with self:
-                if self.Tasks:
-                    tmin = min(t for _, t, _, _, _ in self.Tasks.values())
+                if self.Timeline:
+                    tmin = self.Timeline[0][0]
                     now = time.time()
                     delta = tmin - time.time()
-            if delta > 0.0:
-                self.sleep(delta)
+                if delta > 0.0:
+                    self.sleep(delta)
             self.tick()
 
 if __name__ == "__main__":
