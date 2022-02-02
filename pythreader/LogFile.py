@@ -2,6 +2,7 @@ import time
 import os
 import datetime
 from .core import PyThread, synchronized, Primitive
+from threading import Timer, Thread
 
 def make_timestamp(t=None):
     if t is None:   
@@ -28,48 +29,43 @@ class LogStream(Primitive):
         self.Stream.write(msg);
         self.Stream.flush()
         
-class LogFile(PyThread):
-
-        def __init__(self, path, interval = '1d', keep = 10, add_timestamp=True, append=True, flush_interval=5.0,
-                    name=None):
-                # interval = 'midnight' means roll over at midnight
-                PyThread.__init__(self, name=name)
-                assert isinstance(path, str)
-                self.Path = path
-                self.File = None
-                self.CurLogBegin = 0
-                if type(interval) == type(''):
-                        mult = 1
-                        if interval[-1] == 'd' or interval[-1] == 'D':
-                                interval = interval[:-1]
-                                mult = 24 * 3600
-                                interval = int(interval) * mult
-                        elif interval[-1] == 'h' or interval[-1] == 'H':
-                                interval = interval[:-1]
-                                mult = 3600
-                                interval = int(interval) * mult
-                        elif interval[-1] == 'm' or interval[-1] == 'M':
-                                interval = interval[:-1]
-                                mult = 60
-                                interval = int(interval) * mult
-                self.Interval = interval
-                self.Keep = keep
-                self.AddTimestamps = add_timestamp
-                self.LineBuf = ''
-                self.LastLog = None
-                self.LastFlush = time.time()
-                self.FlushInterval = flush_interval
-                if append:
-                    self.File = open(self.Path, 'a')
-                    self.File.write("%s: [appending to old log]\n" % (make_timestamp(),))
-                    self.CurLogBegin = time.time()
-                #print("LogFile: created with file:", self.File)
-                    
-        def run(self):
-            while True:
-                time.sleep(self.FlushInterval)
-                self.flush()
-                    
+class LogFile(Primitive):
+    
+        def __init__(self, path, interval = '1d', keep = 10, add_timestamp=True, append=True, flush_interval=None, name=None):
+            # interval = 'midnight' means roll over at midnight
+            Primitive.__init__(self, name=name)
+            assert isinstance(path, str)
+            self.Path = path
+            self.File = None
+            self.CurLogBegin = 0
+            if type(interval) == type(''):
+                    mult = 1
+                    if interval[-1] == 'd' or interval[-1] == 'D':
+                            interval = interval[:-1]
+                            mult = 24 * 3600
+                            interval = int(interval) * mult
+                    elif interval[-1] == 'h' or interval[-1] == 'H':
+                            interval = interval[:-1]
+                            mult = 3600
+                            interval = int(interval) * mult
+                    elif interval[-1] == 'm' or interval[-1] == 'M':
+                            interval = interval[:-1]
+                            mult = 60
+                            interval = int(interval) * mult
+            self.Interval = interval
+            self.Keep = keep
+            self.AddTimestamps = add_timestamp
+            self.LineBuf = ''
+            self.LastLog = None
+            self.LastFlush = time.time()
+            if append:
+                self.File = open(self.Path, 'a')
+                self.File.write("%s: [appending to old log]\n" % (make_timestamp(),))
+                self.CurLogBegin = time.time()
+            #print("LogFile: created with file:", self.File)
+            if flush_interval is not None:
+                self.arm_flush_timer(flush_interval)
+                
         def newLog(self):
             if self.File != None:
                     self.File.close()
@@ -110,15 +106,28 @@ class LogFile(PyThread):
                 self.File.write(msg)
             self.flush()
             self.LastLog = datetime.date.today()
-            
+
+        def arm_flush_timer(self, interval):
+            if interval:
+                Timer(interval, self.flush, interval=interval).start()
+                    
         @synchronized
-        def flush(self):
-            if time.time() > self.LastFlush + self.FlushInterval:
+        def flush(self, interval=None):
+            if self.File is not None:
                 self.File.flush()
-                self.LastFlush = time.time()
-        
+            if interval:
+                self.arm_flush_timer(interval)
+                
+        def start(self):
+            # for compatibility with clients, which think LogFile is a thread
+            if isinstance(self, PyThread):
+                PyThread.start(self)
+            elif isinstance(self, Thread):
+                Thread.start(self)
+            else:
+                pass
+                
         def __del__(self):
-            #self.flush()
             if self.File is not None:
                 self.File.close()
                 self.File = None

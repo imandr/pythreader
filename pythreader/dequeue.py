@@ -13,9 +13,9 @@ class DEQueue(Primitive):
     def close(self):
         self.Closed = True
         self.wakeup()
-        
-    @synchronized    
-    def append(self, item, timeout=None):
+
+    def _wait_for_room(self, timeout):
+        # must be called from a synchronized method !
         t0 = time.time()
         t1 = None if timeout is None else t0 + timeout
         while self.Capacity is not None and len(self.List) >= self.Capacity \
@@ -27,42 +27,40 @@ class DEQueue(Primitive):
                     raise RuntimeError("Operation timed-out")
                 dt = t1 - t
             self.sleep(dt)
+
+    @synchronized    
+    def append(self, item, timeout=None, force=False):
+        if not force:
+            self._wait_for_room(timeout)
         if self.Closed:
             raise RuntimeError("Queue is closed")
         self.List.append(item)
         self.wakeup()
         
     def __lshift__(self, item):
-        return self.add(item)
+        return self.append(item)
     
     @synchronized    
-    def insert(self, item, timeout=None):
-        assert not self.Closed, "The queue is closed"
-        t0 = time.time()
-        t1 = None if timeout is None else t0 + timeout
-        while self.Capacity is not None and len(self.List) >= self.Capacity:
-            dt = None
-            if t1 is not None:
-                t = time.time()
-                if t > t1:
-                    raise RuntimeError("Operation timed-out")
-                dt = t1 - t
-            self.sleep(dt)
+    def insert(self, item, timeout=None, force=False):
+        if not force:
+            self._wait_for_room(timeout)
+        if self.Closed:
+            raise RuntimeError("Queue is closed")
         self.List.insert(0, item)
         self.wakeup()
 
     def __rrshift__(self, item):
-        return self.push(item)
+        return self.insert(item)
         
     @synchronized
-    def pop(self):
-        while len(self.List) == 0 and not self.Closed:
-            self.sleep()
-        if len(self.List) == 0:
-            return None     # closed
-        item = self.List[0]
-        self.List = self.List[1:]
-        self.wakeup()
+    def pop(self, index=0, timeout=None):
+        while not (self.List or self.Closed):
+            self.sleep(timeout)
+        try:    
+            item = self.List.pop(index)
+            self.wakeup()       # in case someone is waiting to add an item
+        except IndexError:
+            item = None         # closed
         return item
 
     #
@@ -76,7 +74,7 @@ class DEQueue(Primitive):
         return self
 
     @synchronized
-    def __next__(self):
+    def __next_old__(self):
         while not self.Closed or len(self) > 0:
             while not self.Closed and len(self) == 0:
                 self.sleep()
@@ -85,6 +83,15 @@ class DEQueue(Primitive):
                 return item
             else:
                 break
+        raise StopIteration()
+
+    @synchronized
+    def __next__(self):
+        item = self.pop()
+        if item is None:
+            raise StopIteration()
+        else:
+            return item
         raise StopIteration()
 
     next = __next__
