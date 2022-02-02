@@ -32,5 +32,6 @@ __a_ll__ = [
     'Timeout',
     'Promise',
     'Scheduler',
-    'Gate', 'LogFile', 'LogStream'
+    'Gate', 'LogFile', 'LogStream',
+    'Escrow', 'Producer'
 ]
