@@ -18,11 +18,14 @@ class Job(object):
         
     __repr__ = __str__
         
-    def execute(self):
+    def execute(self, scheduler):
         start = time.time()
         next_t = self.F(*self.Params, **self.Args)
         if next_t is None and self.Interval is not None:
             next_t = start + self.Interval + random.random() * self.Jitter
+        elif next_t < 3.0e7:
+            # if next_t is < 1980, it's relative time
+            next_t += start
         return next_t
 
 class JobTask(Task):
@@ -41,7 +44,7 @@ class JobTask(Task):
         scheduler = self.Scheduler
         try:
             try:
-                next_t = self.Job.execute()
+                next_t = self.Job.execute(self.Scheduler)
             except:
                 print(f"Error in job {self.Job.ID}:", file=sys.stderr)
                 print(traceback.format_exc(), file=sys.stderr)
