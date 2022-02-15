@@ -21,8 +21,11 @@ class Job(object):
     def execute(self, scheduler):
         start = time.time()
         next_t = self.F(*self.Params, **self.Args)
-        if next_t is None and self.Interval is not None:
-            next_t = start + self.Interval + random.random() * self.Jitter
+        if next_t is None:
+            if self.Interval is not None:
+                next_t = start + self.Interval + random.random() * self.Jitter
+        elif next_t == "stop":
+            next_t = None
         elif next_t < 3.0e7:
             # if next_t is < 1980, it's relative time
             next_t += start
@@ -50,7 +53,7 @@ class JobTask(Task):
                 print(traceback.format_exc(), file=sys.stderr)
                 next_t = None
             #print(self, "next_t:", next_t)
-            if next_t != "stop" and next_t is not None:
+            if next_t is not None:
                 scheduler.resubmit(self.Job, next_t)
             else:
                 scheduler.remove(self.Job)
