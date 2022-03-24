@@ -8,6 +8,9 @@ In = []
 class Timeout(Exception):
     pass
 
+class QueueClosed(Exception):
+    pass
+
 def threadName():
     t = currentThread()
     return str(t)

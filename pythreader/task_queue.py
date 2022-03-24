@@ -219,6 +219,8 @@ class TaskQueue(Primitive):
     @synchronized
     def isEmpty(self):
         return len(self.Queue) == 0 and len(self.Threads) == 0
+        
+    is_empty = isEmpty
                 
     def waitUntilEmpty(self):
         # wait until all tasks are done and the queue is empty
