@@ -109,7 +109,7 @@ class LogFile(Primitive):
 
         def arm_flush_timer(self, interval):
             if interval:
-                Timer(interval, self.flush, interval=interval).start()
+                Timer(interval, self.flush).start()
                     
         @synchronized
         def flush(self, interval=None):
