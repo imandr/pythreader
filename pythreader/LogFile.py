@@ -34,9 +34,9 @@ class LogFile(Primitive):
         def __init__(self, path, interval = '1d', keep = 10, add_timestamp=True, append=True, flush_interval=None, name=None):
             # interval = 'midnight' means roll over at midnight
             Primitive.__init__(self, name=name)
-            assert isinstance(path, str)
-            self.Path = path
             self.File = None
+            assert isinstance(path, str), "LogFile.__init__: path must be a string. Got %s %s instead" % (type(path), path) 
+            self.Path = path
             self.CurLogBegin = 0
             if type(interval) == type(''):
                     mult = 1
