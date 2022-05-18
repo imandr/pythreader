@@ -1,6 +1,7 @@
 import time, traceback, sys
 from .core import Primitive, PyThread, synchronized
 from .dequeue import DEQueue
+from .promise import Promise
 from threading import Timer
 
 class TaskQueueDelegate(object):
@@ -27,6 +28,7 @@ class Task(Primitive):
         self.Queued = None
         self.Started = None
         self.Ended = None
+        self._Promise = None
     
     #def __call__(self):
     #    pass
@@ -86,13 +88,20 @@ class TaskQueue(Primitive):
                     result = task.run()
                 task.end()
                 self.Queue.taskEnded(self.Task, result)
+                promise = task._Promise
+                if promise is not None:
+                    promise.complete(result)
             except:
                 task.end()
                 exc_type, value, tb = sys.exc_info()
                 self.Queue.taskFailed(self.Task, exc_type, value, tb)
+                promise = task._Promise
+                if promise is not None:
+                    promise.exception(exc_type, value, tb)
             finally:
                 self.Queue.threadEnded(self)
                 self.Queue = None
+                task._Promise = None
                     
     def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None, name=None):
         Primitive.__init__(self, name=name)
@@ -112,8 +121,11 @@ class TaskQueue(Primitive):
         self.Queue.append(task, timeout=timeout)
         #print("queue.append done", self.counts())
         task.enqueue()
+        task._Promise = Promise()
         self.startThreads()
-        return self
+        return task._Promise
+        
+    add = addTask
         
     def __iadd__(self, task):
         return self.addTask(task)
@@ -124,8 +136,11 @@ class TaskQueue(Primitive):
     def insertTask(self, task, timeout = None):
         self.Queue.insert(task, timeout = timeout)
         task.enqueue()
+        task._Promise = Promise()
         self.startThreads()
-        return self
+        return task._Promise
+        
+    insert = insertTask
         
     def __rshift__(self, task):
         return self.insertTask(task)
