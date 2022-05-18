@@ -117,7 +117,10 @@ class DEQueue(Primitive):
                 self.pop()
                 return x
         return None
-        
+
+    @synchronized
+    def remove(self, item):
+        self.List.remove(item)
     
     def empty(self):
         return not self.List

@@ -22,13 +22,14 @@ class TaskQueueDelegate(object):
 
 class Task(Primitive):
 
-    def __init__(self, name=None):
+    def __init__(self, name=None, after=None):
         Primitive.__init__(self, name=name)
         self.Created = time.time()
         self.Queued = None
         self.Started = None
         self.Ended = None
         self._Promise = None
+        self.After = after
     
     #def __call__(self):
     #    pass
@@ -68,8 +69,10 @@ class FunctionTask(Task):
         self.Args = args
         
     def run(self):
-        return self.F(*self.Params, **self.Args)
-        
+        result = self.F(*self.Params, **self.Args)
+        self.F = self.Params = self.Args = None
+        return result
+
 class TaskQueue(Primitive):
     
     class ExecutorThread(PyThread):
@@ -116,12 +119,14 @@ class TaskQueue(Primitive):
         for t in tasks:
             self.addTask(t)
 
-    def addTask(self, task, timeout = None):
+    @synchronized
+    def addTask(self, task, timeout = None, after=None, promise_data=None):
         #print "addTask() entry"
+        task.After = task.After or after
         self.Queue.append(task, timeout=timeout)
         #print("queue.append done", self.counts())
         task.enqueue()
-        task._Promise = Promise()
+        task._Promise = Promise(data=promise_data)
         self.startThreads()
         return task._Promise
         
@@ -133,14 +138,24 @@ class TaskQueue(Primitive):
     def __lshift__(self, task):
         return self.addTask(task)
         
-    def insertTask(self, task, timeout = None):
+    def add_lambda(self, fcn, *params, timeout = None, after=None, promise_data=None, **kwargs):
+        task = FunctionTask(fcn, *params, **kwargs)
+        return self.addTask(task, timeout=timeout, after=after, promise_data=promise_data)
+        
+    @synchronized
+    def insertTask(self, task, timeout = None, after=None, promise_data=None):
+        task.After = task.After or after
         self.Queue.insert(task, timeout = timeout)
         task.enqueue()
-        task._Promise = Promise()
+        task._Promise = Promise(data=promise_data)
         self.startThreads()
         return task._Promise
         
     insert = insertTask
+
+    def insert_lambda(self, fcn, *params, timeout = None, after=None, **kwargs):
+        task = FunctionTask(fcn, *params, **kwargs)
+        return self.insertTask(task, timeout=timeout, after=after, promise_data=promise_data)
         
     def __rshift__(self, task):
         return self.insertTask(task)
@@ -151,31 +166,65 @@ class TaskQueue(Primitive):
         self.startThreads()
         
     @synchronized
+    def arm_timer(self, t):
+        if self.StartTimer is not None:
+            self.StartTimer.cancel()
+        delta = max(0.0, t - time.time())
+        self.StartTimer = Timer(delta, self.timer_fired)
+        self.StartTimer.daemon = True
+        self.StartTimer.start()
+
+    @synchronized
+    def next_wakeup(self):
+        """
+        Returns time to start next task
+        - returns now() if next task is ready to start
+        - None if the queue is empty
+        """
+        tmin = None
+        now = time.time()
+        tasks = self.Queue.items()
+        for task in tasks:
+            t = task.After or now
+            tmin = min(tmin or t, t)
+
+        if tmin is not None and self.Stagger is not None:
+            tmin = max(tmin, self.LastStart + self.Stagger)
+
+        return tmin
+
+    @synchronized
     def startThreads(self):
         #print "startThreads() entry"
         if not self.Held:
             while self.Queue \
                     and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
                     and not self.Held:
-                if self.Stagger > 0.0:
-                    delta = self.LastStart + self.Stagger - time.time()
-                    #print "arming timer..."
-                    if delta > 0.0:
-                        if self.StartTimer is None:
-                            self.StartTimer = Timer(delta, self.timer_fired)
-                            self.StartTimer.daemon = True
-                            self.StartTimer.start()
+
+                if self.Stagger and time.time() < self.LastStart + self.Stagger:
+                    break
+
+                # find next task ready to start (time > task.After)
+                for task in self.Queue.items():
+                    if task.After is None or task.After < time.time():
+                        self.Queue.remove(task)
                         break
-                self.LastStart = time.time()
-                task = self.Queue.pop()
-                t = self.ExecutorThread(self, task)
-                t.kind = "%s.task" % (self.kind,)
-                self.Threads.append(t)
-                self.call_delegate("taskIsStarting", self, task)
-                t.start()
-                self.call_delegate("taskStarted", self, task)
-                #print("thread started")
-            
+                else:
+                    task = None
+                
+                if task is not None:
+                    self.LastStart = time.time()
+                    t = self.ExecutorThread(self, task)
+                    t.kind = "%s.task" % (self.kind,)
+                    self.Threads.append(t)
+                    self.call_delegate("taskIsStarting", self, task)
+                    t.start()
+                    self.call_delegate("taskStarted", self, task)
+                    
+            tnext = self.next_wakeup()
+            if tnext is not None:
+                self.arm_timer(tnext)
+
     @synchronized
     def threadEnded(self, t):
         #print("queue.threadEnded: ", t)
