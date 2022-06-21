@@ -10,6 +10,9 @@ def to_str(b):
         return b.decode("utf-8")
     else:
         return b
+        
+class SubprocessTimeoutKiller(Timer):
+    pass
 
 class Subprocess(PyThread):
     
@@ -37,22 +40,24 @@ class Subprocess(PyThread):
             self.Subprocess.stdin.write(self.Input)
 
         killer = None
-        if timeout is not None:
-            killer = Timer(timeout, self.killme)
-            killer.start()          # do not start killer until self.Subprocess is set
-            #print("killer started")
+        try:
+            if timeout is not None:
+                killer = SubprocessTimeoutKiller(timeout, self.killme)
+                killer.start()          # do not start killer until self.Subprocess is set
+                #print("killer started")
 
-        out, err = self.Subprocess.communicate()
-        out = to_str(out)
-        err = to_str(err)
-        retcode = self.Subprocess.returncode
-
-        with self:
-                # make this a critical section so the killer process does not intercept us
-                if killer is not None:  
+            out, err = self.Subprocess.communicate()
+            out = to_str(out)
+            err = to_str(err)
+            retcode = self.Subprocess.returncode
+        finally:
+            # make sure to cancel the killer thread no matter what
+            if killer is not None:  
+                with self:
+                    # make this a critical section so the killer process does not intercept us
                     try:    killer.cancel()
                     except: pass
-                self.Subprocess = None
+            self.Subprocess = None
                 
         if self.Killed:
             exc = RuntimeError("timeout")
