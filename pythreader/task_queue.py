@@ -20,6 +20,9 @@ class TaskQueueDelegate(object):
     def taskFailed(self, queue, task, exc_type, exc_value, tback):
         pass
 
+class StartThreadsTimer(Timer):
+    pass
+
 class Task(Primitive):
 
     def __init__(self, name=None, after=None):
@@ -162,17 +165,24 @@ class TaskQueue(Primitive):
         
     @synchronized
     def timer_fired(self):
-        self.StartTimer = None
+        self.cancel_timer()
         self.startThreads()
         
     @synchronized
-    def arm_timer(self, t):
-        if self.StartTimer is not None:
-            self.StartTimer.cancel()
-        delta = max(0.0, t - time.time())
-        self.StartTimer = Timer(delta, self.timer_fired)
+    def arm_timer(self, sleep_until):
+        self.cancel_timer()
+        delta = max(0.0, sleep_until - time.time())
+        self.StartTimer = StartThreadsTimer(delta, self.timer_fired)
         self.StartTimer.daemon = True
         self.StartTimer.start()
+
+    @synchronized
+    def cancel_timer(self):
+        if self.StartTimer is not None:
+            try:    self.StartTimer.cancel()
+            except: pass
+            del self.StartTimer
+            self.StartTimer = None
 
     @synchronized
     def next_wakeup(self):
@@ -196,34 +206,52 @@ class TaskQueue(Primitive):
     @synchronized
     def startThreads(self):
         #print "startThreads() entry"
+        #
+        # cancel timer
+        #
+
+        self.cancel_timer()
+        
         if not self.Held:
+            sleep_until = None
             while self.Queue \
                     and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
-                    and not self.Held:
-
-                if self.Stagger and time.time() < self.LastStart + self.Stagger:
-                    break
-
-                # find next task ready to start (time > task.After)
-                for task in self.Queue.items():
-                    if task.After is None or task.After < time.time():
-                        self.Queue.remove(task)
-                        break
-                else:
-                    task = None
-                
-                if task is not None:
-                    self.LastStart = time.time()
-                    t = self.ExecutorThread(self, task)
-                    t.kind = "%s.task" % (self.kind,)
-                    self.Threads.append(t)
-                    self.call_delegate("taskIsStarting", self, task)
-                    t.start()
-                    self.call_delegate("taskStarted", self, task)
+                    and not self.Held \
+                    and (sleep_until is None or sleep_until < time.time()):
                     
-            tnext = self.next_wakeup()
-            if tnext is not None:
-                self.arm_timer(tnext)
+                now = time.time()
+                sleep_until = None
+                
+                if self.Stagger and now < self.LastStart + self.Stagger:
+                    sleep_until = self.LastStart + self.Stagger
+                    break
+                
+                #
+                # find next task to run
+                #
+                task = None
+                for t in self.Queue.items():
+                    if t.After is None or t.After < now:
+                        task = t        # found undelayed task
+                        break
+                    if task is None or t.After < task.After:
+                        task = t        # first delayed task
+
+                now = time.time()
+                if task is not None:
+                    if task.After is not None and task.After > now:
+                        sleep_until = task.After
+                    else:
+                        self.LastStart = time.time()
+                        t = self.ExecutorThread(self, task)
+                        t.kind = "%s.task" % (self.kind,)
+                        self.Threads.append(t)
+                        self.call_delegate("taskIsStarting", self, task)
+                        t.start()
+                        self.call_delegate("taskStarted", self, task)
+                    
+            if sleep_until:
+                self.arm_timer(sleep_until)
 
     @synchronized
     def threadEnded(self, t):
