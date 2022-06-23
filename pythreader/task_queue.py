@@ -125,7 +125,9 @@ class TaskQueue(Primitive):
         task.enqueue()
         task._Promise = Promise(data=promise_data)
         self.startThreads()
-        return self
+        return task._Promise
+        
+    append = add = addTask
         
     def __iadd__(self, task):
         return self.addTask(task)
@@ -138,7 +140,9 @@ class TaskQueue(Primitive):
         task.enqueue()
         task._Promise = Promise(data=promise_data)
         self.startThreads()
-        return self
+        return task._Promise
+        
+    insert = insertTask
         
     def __rshift__(self, task):
         return self.insertTask(task)
