@@ -1,6 +1,7 @@
 import time, traceback, sys
 from .core import Primitive, PyThread, synchronized
 from .dequeue import DEQueue
+from .promise import Promise
 from threading import Timer
 
 class TaskQueueDelegate(object):
@@ -27,6 +28,7 @@ class Task(Primitive):
         self.Queued = None
         self.Started = None
         self.Ended = None
+        self._Promise = None
     
     #def __call__(self):
     #    pass
@@ -66,7 +68,9 @@ class FunctionTask(Task):
         self.Args = args
         
     def run(self):
-        return self.F(*self.Params, **self.Args)
+        result = self.F(*self.Params, **self.Args)
+        self.F = self.Params = self.Args = None
+        return result
         
 class TaskQueue(Primitive):
     
@@ -85,14 +89,21 @@ class TaskQueue(Primitive):
                 else:
                     result = task.run()
                 task.end()
+                promise = task._Promise
+                if promise is not None:
+                    promise.complete(result)
                 self.Queue.taskEnded(self.Task, result)
             except:
                 task.end()
                 exc_type, value, tb = sys.exc_info()
+                promise = task._Promise
+                if promise is not None:
+                    promise.exception(exc_type, value, tb)
                 self.Queue.taskFailed(self.Task, exc_type, value, tb)
             finally:
                 self.Queue.threadEnded(self)
                 self.Queue = None
+                task._Promise = None
                     
     def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None, name=None):
         Primitive.__init__(self, name=name)
@@ -107,11 +118,12 @@ class TaskQueue(Primitive):
         for t in tasks:
             self.addTask(t)
 
-    def addTask(self, task, timeout = None):
+    def addTask(self, task, timeout = None, promise_data=None):
         #print "addTask() entry"
         self.Queue.append(task, timeout=timeout)
         #print("queue.append done", self.counts())
         task.enqueue()
+        task._Promise = Promise(data=promise_data)
         self.startThreads()
         return self
         
@@ -121,9 +133,10 @@ class TaskQueue(Primitive):
     def __lshift__(self, task):
         return self.addTask(task)
         
-    def insertTask(self, task, timeout = None):
+    def insertTask(self, task, timeout = None, promise_data=None):
         self.Queue.insert(task, timeout = timeout)
         task.enqueue()
+        task._Promise = Promise(data=promise_data)
         self.startThreads()
         return self
         
