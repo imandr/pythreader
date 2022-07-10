@@ -20,13 +20,7 @@ class Job(object):
     __repr__ = __str__
         
     def execute(self):
-        start = time.time()
-        try:
-            next_t = self.F(*self.Params, **self.Args)
-        except:
-            print(f"Error in job {self.Job.ID}:", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
-            next_t = None
+        next_t = self.F(*self.Params, **self.Args)
         if next_t is None:
             if self.Interval is not None:
                 next_t = start + self.Interval + random.random() * self.Jitter
@@ -43,6 +37,7 @@ class JobTask(Task):
         Task.__init__(self, name=f"JobTask({job.ID})")
         self.Scheduler = scheduler
         self.Job = job
+        self.JobID = job.ID
 
     def __str__(self):
         return f"JobTask({self.Job.ID})"
@@ -58,20 +53,25 @@ class JobTask(Task):
             scheduler.add_job(job, next_t)
 
 class Scheduler(PyThread):
-    def __init__(self, max_concurrent = 10, stop_when_empty = False):
-        PyThread.__init__(self)
+    def __init__(self, max_concurrent = 10, stop_when_empty = False, delegate=None, daemon=False, name=None, **args):
+        PyThread.__init__(self, daemon=daemon, name=name)
         self.Timeline = []      # [job, ...]
-        self.Queue = TaskQueue(max_concurrent, delegate=self)
+        self.Queue = TaskQueue(max_concurrent, delegate=self, **args)
+        self.Delegate = delegate
         self.StopWhenEmpty = stop_when_empty
         self.Stop = False
-        
+
     # delegate interface used to wait until the task queue is empty
-    def taskEnded(self, *params):
+    def taskEnded(self, queue, task, result):
+        if self.Delegate is not None and hasattr(self.Delegate, "jobEnded"):
+            self.Delegate.jobEnded(self, task.JobID)
         self.wakeup()
-        
-    def taskFailed(self, *params):
+
+    def taskFailed(self, queue, task, exc_type, exc_value, tb):
+        if self.Delegate is not None and hasattr(self.Delegate, "jobFailed"):
+            self.Delegate.jobFailed(self, task.JobID, exc_type, exc_value, tb)
         self.wakeup()
-        
+
     def stop(self):
         self.Stop = True
         self.wakeup()
@@ -144,6 +144,7 @@ class Scheduler(PyThread):
         while not self.is_empty():
             self.sleep(10)
     
+    join = wait_until_empty
 
 if __name__ == "__main__":
     from datetime import datetime
