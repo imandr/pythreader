@@ -28,6 +28,7 @@ class Task(Primitive):
         self.Queued = None
         self.Started = None
         self.Ended = None
+        self._After = None
         self._Promise = None
     
     #def __call__(self):
@@ -72,7 +73,7 @@ class FunctionTask(Task):
         self.F = self.Params = self.Args = None
         return result
         
-class TaskQueue(Primitive):
+class TaskQueue(PyThread):
     
     class ExecutorThread(PyThread):
         def __init__(self, queue, task):
@@ -105,8 +106,9 @@ class TaskQueue(Primitive):
                 self.Queue = None
                 task._Promise = None
                     
-    def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None, name=None):
-        Primitive.__init__(self, name=name)
+    def __init__(self, nworkers, capacity=None, stagger=None, tasks = [], delegate=None, 
+                        name=None, daemon=None):
+        PyThread.__init__(self, name=name, daemon=daemon)
         self.NWorkers = nworkers
         self.Threads = []
         self.Queue = DEQueue(capacity)
@@ -117,14 +119,16 @@ class TaskQueue(Primitive):
         self.Delegate = delegate
         for t in tasks:
             self.addTask(t)
+        self.Stop = False
 
-    def addTask(self, task, timeout = None, promise_data=None):
+    def addTask(self, task, timeout = None, promise_data=None, after=None):
         #print "addTask() entry"
+        task._After = after
         self.Queue.append(task, timeout=timeout)
         #print("queue.append done", self.counts())
         task.enqueue()
         task._Promise = Promise(data=promise_data)
-        self.startThreads()
+        self.wakeup()
         return task._Promise
         
     append = add = addTask
@@ -136,10 +140,11 @@ class TaskQueue(Primitive):
         return self.addTask(task)
         
     def insertTask(self, task, timeout = None, promise_data=None):
+        task._After = after
         self.Queue.insert(task, timeout = timeout)
         task.enqueue()
         task._Promise = Promise(data=promise_data)
-        self.startThreads()
+        self.wakeup()
         return task._Promise
         
     insert = insertTask
@@ -147,43 +152,46 @@ class TaskQueue(Primitive):
     def __rshift__(self, task):
         return self.insertTask(task)
         
-    @synchronized
-    def timer_fired(self):
-        self.StartTimer = None
-        self.startThreads()
-        
-    @synchronized
-    def startThreads(self):
-        #print "startThreads() entry"
-        if not self.Held:
-            while self.Queue \
-                    and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
-                    and not self.Held:
-                if self.Stagger > 0.0:
-                    delta = self.LastStart + self.Stagger - time.time()
-                    #print "arming timer..."
-                    if delta > 0.0:
-                        if self.StartTimer is None:
-                            self.StartTimer = Timer(delta, self.timer_fired)
-                            self.StartTimer.daemon = True
-                            self.StartTimer.start()
-                        break
-                self.LastStart = time.time()
-                task = self.Queue.pop()
-                t = self.ExecutorThread(self, task)
-                t.kind = "%s.task" % (self.kind,)
-                self.Threads.append(t)
-                self.call_delegate("taskIsStarting", self, task)
-                t.start()
-                self.call_delegate("taskStarted", self, task)
-                #print("thread started")
-            
+    def run(self):
+        while not self.Stop:
+            with self:
+                now = time.time()
+                if self.Stagger is not None and self.LastStart + self.Stagger > now:
+                    self.sleep(self.LastStart + self.Stagger - now)
+                elif self.Queue \
+                            and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
+                            and not self.Held:
+                    queued = self.Queue.items()
+                    next_task = None
+                    sleep_until = None
+                    for t in queued:
+                        after = t._After
+                        if after is None or after <= now:
+                            next_task = t
+                            break
+                        else:
+                            sleep_until = after if sleep_until is None else min(sleep_until, after)
+                    if next_task is not None:
+                        self.Queue.remove(next_task)
+                        t = self.ExecutorThread(self, next_task)
+                        t.kind = "%s.task" % (self.kind,)
+                        self.Threads.append(t)
+                        self.call_delegate("taskIsStarting", self, next_task)
+                        self.LastStart = time.time()
+                        t.start()
+                        self.call_delegate("taskStarted", self, next_task)
+                    else:
+                        now = time.time()
+                        if now < sleep_until:
+                            self.sleep(sleep_until - now)
+                else:
+                    self.sleep(10)
+
     @synchronized
     def threadEnded(self, t):
         #print("queue.threadEnded: ", t)
         if t in self.Threads:
             self.Threads.remove(t)
-        self.startThreads()
         self.wakeup()
         
     def call_delegate(self, cb, *params):
@@ -231,7 +239,7 @@ class TaskQueue(Primitive):
     @synchronized
     def release(self):
         self.Held = False
-        self.startThreads()
+        self.wakeup()
         
     @synchronized
     def isEmpty(self):
@@ -244,13 +252,11 @@ class TaskQueue(Primitive):
         if not self.isEmpty():
             while not self.sleep(function=self.isEmpty):
                 pass
-                
-    join = waitUntilEmpty
-                
+
     def drain(self):
         self.hold()
         self.waitUntilEmpty()
-                
+
     @synchronized
     def flush(self):
         self.Queue.flush()

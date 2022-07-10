@@ -117,8 +117,7 @@ class DEQueue(Primitive):
                 self.pop()
                 return x
         return None
-        
-    
+
     def empty(self):
         return not self.List
         
@@ -127,3 +126,6 @@ class DEQueue(Primitive):
     
     def __contains__(self, item):
         return item in self.List
+        
+    def remove(self, item):
+        self.List.remove(item)
