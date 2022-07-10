@@ -1,3 +1,5 @@
+.*
+!.gitignore
 Untitled.ipynb
 github_token
 *.bck
