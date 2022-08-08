@@ -129,3 +129,4 @@ class DEQueue(Primitive):
         
     def remove(self, item):
         self.List.remove(item)
+        self.wakeup()
