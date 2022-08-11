@@ -159,8 +159,32 @@ class TaskQueue(PyThread):
         """Stops the queue thread"""
         self.Stop = True
         self.wakeup()
+        
+    def make_task(self, task_or_callable, *params, **args):
+        if isinstance(task, Task):
+            # params and args are ignored
+            task = task_or_callable
+        elif callable(task_or_callable):
+            task = FunctionTask(task_or_callable, *params, **args)
+        else:
+            raise ArgumentError("The task argument must be either a callable or a Task subclass instance")
+        return task
+            
+    def __add(self, mode, task, *params,
+            timeout=None, promise_data=None, after=None, force=False, **args):
+        task = self.make_task(task, *params, **args)
+        timeout = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+        task._Private.After = after.timestamp() if isinstance(after, datetime) else after
+        if mode == "insert":
+            self.Queue.insert(task, timeout = timeout, force=force)
+        else:           # mode == "append"
+            self.Queue.append(task, timeout = timeout, force=force)
+        task._queued()
+        task._Private.Promise = promise = Promise(data=promise_data)
+        self.wakeup()
+        return promise
 
-    def append(self, task, timeout=None, promise_data=None, after=None, force=False):
+    def append(self, task, *params, timeout=None, promise_data=None, after=None, force=False, **args):
         """Appends the task to the end of the queue. If the queue is at or above its capacity, the method will block.
         
         Args:
@@ -178,22 +202,15 @@ class TaskQueue(PyThread):
         Raises:
             RuntimeError: the queue is closed or the timeout expired
         """
-        #print "addTask() entry"
-        timeout = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
-        task._Private.After = after.timestamp() if isinstance(after, datetime) else after
-        self.Queue.append(task, timeout=timeout, force=force)
-        #print("queue.append done", self.counts())
-        task._queued()
-        task._Private.Promise = promise = Promise(data=promise_data)
-        self.wakeup()
-        return promise
+        return self.__add("append", task, *params, 
+                after=after, timeout=timeout, promise_data=promise_data, force=force, **args)
         
     add = addTask = append
         
     def __iadd__(self, task):
         return self.addTask(task)
-        
-    def insert(self, task, timeout = None, promise_data=None, force=False):
+
+    def insert(self, task, *params, timeout = None, promise_data=None, after=None, force=False, **args):
         """Inserts the task at the beginning of the queue. If the queue is at or above its capacity, the method will block.
            A Task can be also inserted into the queue using the '>>' operator. In this case, '>>' operator returns
            the promise object associated with the task: ``promise = task >> queue``.
@@ -213,13 +230,8 @@ class TaskQueue(PyThread):
         Raises:
             RuntimeError: the queue is closed or the timeout expired
         """
-        timeout = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
-        task._Private.After = after.timestamp() if isinstance(after, datetime) else after
-        self.Queue.insert(task, timeout = timeout, force=force)
-        task._queued()
-        task._Private.Promise = promise = Promise(data=promise_data)
-        self.wakeup()
-        return promise
+        return self.__add("insert", task, *params, 
+                after=after, timeout=timeout, promise_data=promise_data, force=force, **args)
         
     insertTask = insert
 
