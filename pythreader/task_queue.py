@@ -161,7 +161,7 @@ class TaskQueue(PyThread):
         self.wakeup()
         
     def make_task(self, task_or_callable, *params, **args):
-        if isinstance(task, Task):
+        if isinstance(task_or_callable, Task):
             # params and args are ignored
             task = task_or_callable
         elif callable(task_or_callable):
