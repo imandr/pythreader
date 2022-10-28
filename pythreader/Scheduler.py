@@ -20,6 +20,7 @@ class Job(object):
     __repr__ = __str__
         
     def execute(self):
+        start = time.time()
         next_t = self.F(*self.Params, **self.Args)
         if next_t is None:
             if self.Interval is not None:
