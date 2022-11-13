@@ -39,6 +39,10 @@ class Task(Primitive):
         self._Private = _TaskPrivate()
         self._Private.After = None
         self._Private.Promise = None
+        
+    @property
+    def _promise(self):
+        return self._Private.Promise
     
     #def __call__(self):
     #    pass
@@ -385,6 +389,8 @@ class TaskQueue(PyThread):
         if not self.isEmpty():
             while not self.sleep(function=self.isEmpty):
                 pass
+                
+    join = waitUntilEmpty
 
     def drain(self):
         """

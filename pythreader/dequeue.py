@@ -40,6 +40,8 @@ class DEQueue(Primitive):
     def __lshift__(self, item):
         return self.append(item)
     
+    put = append
+    
     @synchronized    
     def insert(self, item, timeout=None, force=False):
         if not force:
@@ -51,7 +53,7 @@ class DEQueue(Primitive):
 
     def __rrshift__(self, item):
         return self.insert(item)
-        
+
     @synchronized
     def pop(self, index=0, timeout=None):
         while not (self.List or self.Closed):
@@ -62,6 +64,8 @@ class DEQueue(Primitive):
         except IndexError:
             item = None         # closed
         return item
+
+    get = pop
 
     #
     # Iterator protocol

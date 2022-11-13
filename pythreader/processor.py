@@ -13,13 +13,7 @@ class _WorkerTask(Task):
         self.Promise = promise
         
     def run(self):
-        try:
-            out = self.Processor._process(self.Item, self.Promise)
-        finally:
-            # unlink
-            self.Processor = None
-            self.Promise = None
-            self.Item = None
+        out = self.Processor._process(self.Item, self.self.Promise)
             
 class _OutputIterator(object):
     
@@ -47,11 +41,10 @@ class Processor(Primitive):
     def __init__(self, max_workers = None, queue_capacity = None, name=None, output = None, stagger=None, delegate=None,
             put_timeout=None):
         Primitive.__init__(self, name=name)
-        self.Output = output
+        self.Output = output or DEQueue()
         self.WorkerQueue = TaskQueue(max_workers, capacity=queue_capacity, stagger=stagger)
-        self.PutTimeout = put_timeout
         self.Delegate = delegate
-        self.OutputQueue = None
+        self.PutTimeout = put_timeout
         self.Closed = True
         
     def hold(self):
@@ -59,20 +52,23 @@ class Processor(Primitive):
 
     def release(self):
         self.WorkerQueue.release()
-        
+
     def close(self):
         self.Closed = True
         self.WorkerQueue.close()
-        
+
     def put(self, item, timeout=-1):
         if timeout == -1: timeout = self.PutTimeout
-        promise = Promise(item, name="initial")
+        promise = Promise()
         self.WorkerQueue.addTask(_WorkerTask(self, item, promise), timeout)
         return promise
-        
+
+    def get(self):
+        return self.Output.get()
+
     def join(self):
         return self.WorkerQueue.join()
-        
+
     def _process(self, item, promise):
         #print("%x: Processor._process: item: %s" % (id(self), item))
         try:    
@@ -81,6 +77,7 @@ class Processor(Primitive):
             exc_type, exc_value, tb = sys.exc_info()
             if self.Delegate is not None:
                 self.Delegate.itemFailed(item, exc_type, exc_value, tb)
+            raise
             promise.exception(exc_type, exc_value, tb)
             if self.OutputQueue is not None:
                 self.OutputQueue.append((None, (exc_type, exc_value, tb)))
@@ -88,17 +85,15 @@ class Processor(Primitive):
             #print("%x: out: %s" % (id(self), out))
             if self.Delegate is not None:
                 self.Delegate.itemProcessed(item, out)
-            if out is not None and self.Output is not None:
-                next_promise = self.Output.put(out)
-                next_promise.Name = "secondary"
-                next_promise.chain(promise)     # fulfil this promise later, when the output processor has done with the item
-            else:
-                #print("%s: complete(%s)..." % (self, promise))
-                promise.complete(out)
-                if self.OutputQueue is not None:
-                    self.OutputQueue.append((out, None))
-                #print("%s: complete(%s) done" % (self, promise))
-            
+            if self.Output is not None and out is not None:
+                    next_promise = self.Output.put(out)
+                    if next_promise is not None:
+                        # fulfil this promise later, when the output processor has done with the item
+                        next_promise.Name = "secondary"
+                        next_promise.chain(promise)
+                        return
+            promise.complete(out)
+
     def process(self, item):
         # override me
         pass
@@ -123,16 +118,4 @@ class Processor(Primitive):
         
     @synchronized
     def __iter__(self):
-        if self.OutputQueue is not None:
-            raise RunTimeError("Can not open second iterator")
-        if self.Output is not None:
-            raise ValueError("Can not iterate over output of a processor sending its output to another processor")
-        self.OutputQueue = DEQueue()
-        return _OutputIterator(self, self.OutputQueue)
-        
-    @synchronized
-    def _remove_output_queue(self, queue):
-        if self.OutputQueue is queue:
-            self.OutputQueue = None
-        
-        
+        return iter(self.Output)
