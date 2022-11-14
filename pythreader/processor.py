@@ -1,4 +1,4 @@
-from .core import Primitive, synchronized
+from .core import Primitive, synchronized, PyThread
 from .dequeue import DEQueue
 from .task_queue import Task, TaskQueue
 from .promise import Promise
@@ -13,8 +13,22 @@ class _WorkerTask(Task):
         self.Promise = promise
         
     def run(self):
-        out = self.Processor._process(self.Item, self.self.Promise)
+        out = self.Processor._process(self.Item, self.Promise)
+        
+class _CloseOutputThread(Task):
+    
+    def __init__(self, processor):
+        Thread.__init__(self)
+        self.Processor = processor
+        
+    def close_processor(self):
+        self.Processor.join()
+        self.Processor.close_output()
             
+    def run(self):
+        pass
+        
+
 class _OutputIterator(object):
     
     def __init__(self, processor, queue):
@@ -34,7 +48,6 @@ class _OutputIterator(object):
             
     def __del__(self):
         self.Processor._remove_output_queue(self.Queue)
-        
 
 class Processor(Primitive):
     
@@ -45,19 +58,34 @@ class Processor(Primitive):
         self.WorkerQueue = TaskQueue(max_workers, capacity=queue_capacity, stagger=stagger)
         self.Delegate = delegate
         self.PutTimeout = put_timeout
-        self.Closed = True
+        self.Closed = False
         
     def hold(self):
         self.WorkerQueue.hold()
 
     def release(self):
         self.WorkerQueue.release()
+        
+    def open(self):
+        self.Output.open()
+        self.Closed = False
 
+    @synchronized
     def close(self):
         self.Closed = True
-        self.WorkerQueue.close()
+        t = PyThread(target=self.wait_and_close_output)
+        t.start()
+    
+    def wait_and_close_output(self):
+        print("wait_and_close_output: joining...")
+        self.join()
+        print("          join done")
+        self.Output.close()
 
+    @synchronized
     def put(self, item, timeout=-1):
+        if self.Closed:
+            raise RuntimeError("Processor is closed")
         if timeout == -1: timeout = self.PutTimeout
         promise = Promise()
         self.WorkerQueue.addTask(_WorkerTask(self, item, promise), timeout)

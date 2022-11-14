@@ -14,6 +14,11 @@ class DEQueue(Primitive):
         self.Closed = True
         self.wakeup()
 
+    @synchronized
+    def open(self):
+        self.Closed = False
+        self.wakeup()
+
     def _wait_for_room(self, timeout):
         # must be called from a synchronized method !
         t0 = time.time()

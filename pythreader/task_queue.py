@@ -380,7 +380,8 @@ class TaskQueue(PyThread):
         return len(self.Queue) == 0 and len(self.Threads) == 0
         
     isEmpty = is_empty
-                
+    
+    @synchronized
     def waitUntilEmpty(self):
         """
         Blocks until the queue is empty (no tasks are running and no tasks are waiting)
