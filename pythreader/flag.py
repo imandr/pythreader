@@ -20,6 +20,11 @@ class Flag(Primitive):
             predicate = lambda x, v=value: x == v
         if predicate is None:
             predicate = lambda x: not not x     # default: wait until the value evaluates to True
-        return self.sleep_until(lambda flag: predicate(flag.Value), self, timeout=timeout)
+        while True:
+            with self:
+                if predicate(self._Value):
+                    break
+                else:
+                    self.sleep(timeout)
                 
             

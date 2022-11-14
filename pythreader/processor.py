@@ -48,13 +48,15 @@ class _OutputIterator(object):
             
     def __del__(self):
         self.Processor._remove_output_queue(self.Queue)
-
+        
 class Processor(Primitive):
     
-    def __init__(self, max_workers = None, queue_capacity = None, name=None, output = None, stagger=None, delegate=None,
+    Default = ""
+
+    def __init__(self, max_workers = None, queue_capacity = None, name=None, output = Default, stagger=None, delegate=None,
             put_timeout=None):
         Primitive.__init__(self, name=name)
-        self.Output = output or DEQueue()
+        self.Output = DEQueue() if output is self.Default else output
         self.WorkerQueue = TaskQueue(max_workers, capacity=queue_capacity, stagger=stagger)
         self.Delegate = delegate
         self.PutTimeout = put_timeout
