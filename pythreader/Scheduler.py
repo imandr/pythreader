@@ -106,6 +106,8 @@ class Scheduler(PyThread):
             id = uuid.uuid4().hex
         if t0 is None:
             t0 = time.time() + (interval or 0.0) + random.random()*jitter
+        elif t0 < 10*365*24*3600:           # ~ Jan 1 1980
+            t0 = time.time() + t0
         job = Job(id, t0, interval, jitter, fcn, params, args)
         self.add_job(job, t0)
         return id

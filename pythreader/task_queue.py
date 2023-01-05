@@ -174,7 +174,7 @@ class TaskQueue(PyThread):
         timeout = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
         if isinstance(after, timedelta):
             after = after.totalseconds()
-        if after < 365*24*3600:
+        if after is not None and after < 10*365*24*3600:            # ~ Jan 1 1980
             after = time.time() + after
         task._Private.After = after.timestamp() if isinstance(after, datetime) else after
         task._Private.Promise = promise = Promise(data=promise_data)
