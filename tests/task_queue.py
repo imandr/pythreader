@@ -17,9 +17,10 @@ class MyTask(Task):
         print (e)
 
 q = TaskQueue(5, stagger=1.0, tasks=[MyTask(x) for x in range(10)])
-q << MyTask(30) << MyTask(31)
+q << MyTask(30) 
+q << MyTask(31)
 MyTask(32) >> q
-q += MyTask(33)
+q.add(MyTask(33))
 
 
 Timer(3.5, lambda q: q.addTask(MyTask(40)), (q,)).start()

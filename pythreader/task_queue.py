@@ -39,6 +39,10 @@ class Task(Primitive):
         self._Private = _TaskPrivate()
         self._Private.After = None
         self._Private.Promise = None
+        
+    @property
+    def _promise(self):
+        return self._Private.Promise
     
     #def __call__(self):
     #    pass
@@ -174,7 +178,6 @@ class TaskQueue(PyThread):
             after = time.time() + after
         task._Private.After = after.timestamp() if isinstance(after, datetime) else after
         task._Private.Promise = promise = Promise(data=promise_data)
-        print(time.time(), task._Private.After)
         if mode == "insert":
             self.Queue.insert(task, timeout = timeout, force=force)
         else:           # mode == "append"
@@ -303,11 +306,7 @@ class TaskQueue(PyThread):
         return self.call_delegate("taskEnded", self, task, result)
         
     def taskFailed(self, task, exc_type, exc_value, tb):
-        if self.Delegate is None:
-            print("Exception in task:", task)
-            traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
-        else:
-            return self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
+        return self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
             
     @synchronized
     def waitingTasks(self):
@@ -379,7 +378,8 @@ class TaskQueue(PyThread):
         return len(self.Queue) == 0 and len(self.Threads) == 0
         
     isEmpty = is_empty
-                
+    
+    @synchronized
     def waitUntilEmpty(self):
         """
         Blocks until the queue is empty (no tasks are running and no tasks are waiting)
@@ -388,6 +388,8 @@ class TaskQueue(PyThread):
         if not self.isEmpty():
             while not self.sleep(function=self.isEmpty):
                 pass
+                
+    join = waitUntilEmpty
 
     def drain(self):
         """
