@@ -25,6 +25,7 @@ setup(
     url = "https://github.com/imandr/pythreader",
     packages=['pythreader', 'tests'],
     long_description="A set of useful tools built on top of standard Python threading module", #read('README'),
+    zip_safe = False,
     classifiers=[
         "Operating System :: POSIX",
         "Topic :: Software Development :: Libraries :: Python Modules",

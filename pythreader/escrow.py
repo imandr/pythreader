@@ -36,6 +36,31 @@ class Escrow(Primitive):
             finally:
                 self.Value = None               # time-out or something else
 
+class EscrowBarrier(Primitive):
+    
+    def __init__(self, threshold=2, initial_value=None, **args):
+        Primitive.__init__(self, **args)
+        self.Value = self.InitialValue = initial_value
+        self.Threshold = threshold
+        self.NWaiting = 0
+        self.Done = False
+    
+    @synchronized
+    def arrive(self, value=None, increment=False, timeout=None):
+        if not self.Done:
+            if increment:
+                self.Value += value
+            else:
+                self.Value = value
+            self.NWaiting += 1
+            while self.NWaiting < self.Threshold:
+                self.sleep(timeout)
+            self.Done = True
+            self.NWaiting = 0
+        return self.Value
 
-            
-        
+    @synchronized
+    def wait(self, timeout=None):
+        while not self.Done:
+            self.sleep(timeout)
+        return self.Value

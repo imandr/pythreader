@@ -120,7 +120,7 @@ class TaskQueue(PyThread):
                 self.Queue = None
                 task._Private.Promise = None
 
-    def __init__(self, nworkers=None, capacity=None, stagger=None, tasks = [], delegate=None, 
+    def __init__(self, nworkers=None, capacity=None, stagger=0.0, tasks = [], delegate=None, 
                         name=None, daemon=True, start_immediately=True):
         """Initializes the TaskQueue object
         
@@ -130,7 +130,7 @@ class TaskQueue(PyThread):
                         will block. Default: no limit.
 
         Keyword Arguments:
-            stagger (int or float): time interval in seconds between consecutive task starts. None or 0 means no staggering.
+            stagger (int or float): time interval in seconds between consecutive task starts. Default=0, no staggering.
             tasks (list of Task objects): initial task list to be added to the queue
             delegate (object): an object to receive callbacks with task status updates. If None, updates will not be sent.
             name (string): PyThreader object name
@@ -145,7 +145,7 @@ class TaskQueue(PyThread):
         self.Threads = []
         self.Queue = DEQueue(capacity)
         self.Held = False
-        self.Stagger = stagger or 0.0
+        self.Stagger = stagger
         self.LastStart = 0.0
         self.StartTimer = None
         self.Delegate = delegate
@@ -160,27 +160,26 @@ class TaskQueue(PyThread):
         self.Stop = True
         self.wakeup()
         
-    def make_task(self, task_or_callable, *params, **args):
-        if isinstance(task, Task):
-            # params and args are ignored
-            task = task_or_callable
-        elif callable(task_or_callable):
-            task = FunctionTask(task_or_callable, *params, **args)
-        else:
-            raise ArgumentError("The task argument must be either a callable or a Task subclass instance")
-        return task
-            
     def __add(self, mode, task, *params,
             timeout=None, promise_data=None, after=None, force=False, **args):
-        task = self.make_task(task, *params, **args)
+        if not isinstance(task, Task):
+            if callable(task):
+                task = FunctionTask(task, *params, **args)
+            else:
+                raise ArgumentError("The task argument must be either a callable or a Task subclass instance")
         timeout = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+        if isinstance(after, timedelta):
+            after = after.totalseconds()
+        if after < 365*24*3600:
+            after = time.time() + after
         task._Private.After = after.timestamp() if isinstance(after, datetime) else after
+        task._Private.Promise = promise = Promise(data=promise_data)
+        print(time.time(), task._Private.After)
         if mode == "insert":
             self.Queue.insert(task, timeout = timeout, force=force)
         else:           # mode == "append"
             self.Queue.append(task, timeout = timeout, force=force)
         task._queued()
-        task._Private.Promise = promise = Promise(data=promise_data)
         self.wakeup()
         return promise
 
@@ -193,7 +192,9 @@ class TaskQueue(PyThread):
         Keyword Arguments:
             timeout (int or float or timedelta): time to block if the queue is at or above the capacity. Default: block indefinitely.
             promise_data (object): data to be associated with the task's promise
-            after (int or float or datetime): time to start the task after. Default: start as soon as possible
+            after (int or float or datetime): time to start the task after. 
+                If ``after`` is numeric and < 365 days or it is a datetime.timedelta object, it is interpreted as time relative to the current time.
+                Default: start as soon as possible
             force (boolean): ignore the queue capacity and append the task immediately. Default: False
         
         Returns:
@@ -222,6 +223,8 @@ class TaskQueue(PyThread):
             timeout (int or float or timedelta): time to block if the queue is at or above the capacity. Default: block indefinitely.
             promise_data (object): data to be associated with the task's promise
             after (int or float or datetime): time to start the task after. Default: start as soon as possible
+                If ``after`` is numeric and < 365 days or it is a datetime.timedelta object, it is interpreted as time relative to the current time.
+                Default: start as soon as possible
             force (boolean): ignore the queue capacity and append the task immediately. Default: False
         
         Returns:
@@ -400,7 +403,28 @@ class TaskQueue(PyThread):
         """
         self.Queue.flush()
         self.wakeup()
-            
+
+    @synchronized
+    def cancel(self, task):
+        """
+        Cancel a queued task. Can be used only of the task was added as a Task object. The Promise associated with the Task will be
+        fulfilled with None as the result. If the queue has a delegate, the taskCancelled delegate's method will be called.
+        If the task was already runnig or was not found in the queue, ValueError exception will be raised.
+
+        Args:
+            task (Task): A Task subclass instance
+        
+        Returns:
+            Task: cancelled task
+        """
+
+        try:    self.Queue.remove(task)
+        except ValueError:
+            raise ValueError("Task not in the queue")
+        task._Private.Promise.complete()
+        self.call_delegate("taskCancelled", self, task)
+        return task
+
     def __len__(self):
         """
         Equivalent to TaskQueue.nwaiting()
