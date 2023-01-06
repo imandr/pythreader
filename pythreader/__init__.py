@@ -1,7 +1,7 @@
 from .core import Primitive, synchronized, PyThread, gated, TimerThread, Timeout
 from .dequeue import DEQueue
 from .task_queue import TaskQueue, Task
-from .Scheduler import Scheduler
+from .Scheduler import Scheduler, schedule_job
 from .Subprocess import Subprocess, ShellCommand
 from .RWLock import RWLock
 from .Version import Version

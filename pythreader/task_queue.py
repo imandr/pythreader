@@ -297,13 +297,15 @@ class TaskQueue(PyThread):
                 if self.Queue and (self.NWorkers is None or nrunning < self.NWorkers) and not self.Held:
                     next_task = None
                     sleep_until = None
-                    for t in queued:
+                    for t in self.Queue.items():
                         after = t._Private.After
                         if after is None or after <= now:
                             next_task = t
                             break
                         else:
                             sleep_until = after if sleep_until is None else min(sleep_until, after)
+                    #print("next_task:", next_task)
+                    #print("queue:", self.Queue.items())
                     if next_task is not None:
                         self.Queue.remove(next_task)
                         t = self.ExecutorThread(self, next_task)

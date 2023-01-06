@@ -1,11 +1,11 @@
-from .core import PyThread, synchronized
+from .core import PyThread, synchronized, Primitive
 from .task_queue import Task, TaskQueue
 import time, uuid, traceback, random
 import sys
 
 class Job(object):
     
-    def __init__(self, id, t, interval, jitter, fcn, params, args):
+    def __init__(self, scheduler, id, t, interval, jitter, fcn, count, params, args):
         self.F = fcn
         self.Params = params or ()
         self.Args = args or {}
@@ -13,6 +13,8 @@ class Job(object):
         self.Interval = interval
         self.Jitter = jitter or 0.0
         self.NextT = t
+        self.Scheduler = scheduler
+        self.Count = count
         
     def __str__(self):
         return f"Job({self.ID})"
@@ -20,21 +22,31 @@ class Job(object):
     __repr__ = __str__
         
     def run(self):
+        self.Scheduler = None           # to break circular dependencies
         start = time.time()
         exc_info = None
         try:    next_t = self.F(*self.Params, **self.Args)
         except:
             exc_info = sys.exc_info()
             next_t = None
-        if next_t is None:
-            if self.Interval is not None:
-                next_t = start + self.Interval + random.random() * self.Jitter
-        elif next_t == "stop":
+        if self.Count is not None:
+            self.Count -= 1
+            if self.Count <= 0:
+                return None, exc_info
+        if next_t == "stop":
             next_t = None
-        elif next_t < 3.0e7:
+        elif next_t is None and self.Interval is not None:
+            next_t = start + self.Interval + random.random() * self.Jitter
+        if next_t is not None and next_t < 3.0e7:
             # if next_t is < 1980, it's relative time
-            next_t += start + random.random() * self.Jitter
+            next_t = next_t + start + random.random() * self.Jitter
         return next_t, exc_info
+        
+    def cancel(self):
+        try: 
+            self.Scheduler.remove(self)
+        except: pass
+        self.Scheduler = None
 
 class JobThread(PyThread):
     
@@ -89,7 +101,7 @@ class Scheduler(PyThread):
         self.wakeup()
         
     @synchronized        
-    def add(self, fcn, *params, interval=None, t0=None, id=None, jitter=0.0, param=None, **args):
+    def add(self, fcn, *params, interval=None, t0=None, id=None, jitter=0.0, param=None, count=None, **args):
         #
         # t0 - first time to run the task. Default:
         #   now + interval or now if interval is None
@@ -108,17 +120,18 @@ class Scheduler(PyThread):
         if param is not None:       # for backward compatibility
             params = (param,)
         if id is None:
-            id = uuid.uuid4().hex
+            id = uuid.uuid4().hex[:8]
         if t0 is None:
             t0 = time.time() + (interval or 0.0) + random.random()*jitter
         elif t0 < 10*365*24*3600:           # ~ Jan 1 1980
             t0 = time.time() + t0
-        job = Job(id, t0, interval, jitter, fcn, params, args)
+        job = Job(self, id, t0, interval, jitter, fcn, count, params, args)
         self.add_job(job, t0)
-        return id
+        return job
         
     @synchronized
-    def remove(self, job_id):
+    def remove(self, job_or_id):
+        job_id = job_or_id if isinstance(job_or_id, str) else job_or_id.ID
         self.Timeline = [j for j in self.Timeline if j.ID != job_id]
 
     @synchronized
@@ -149,6 +162,7 @@ class Scheduler(PyThread):
                     delta = next_t - time.time()
             if delta > 0:
                 self.sleep(delta)
+                
 
     @synchronized        
     def wait_until_empty(self):
@@ -156,6 +170,22 @@ class Scheduler(PyThread):
             self.sleep(10)
     
     join = wait_until_empty
+
+_GLobalSchedulerLock = Primitive()
+_GlobalScheduler = None
+
+def init_global_scheduler(name="GlobalScheduler", **args):
+    global _GlobalScheduler
+    if _GlobalScheduler is None:
+        with _GLobalSchedulerLock:
+            if _GlobalScheduler is None:
+                _GlobalScheduler = Scheduler(name=name, **args)
+                _GlobalScheduler.start()
+
+def schedule_job(t, fcn, *params, **args):
+    global _GlobalScheduler
+    init_global_scheduler()         # init if needed
+    return _GlobalScheduler.add(fcn, *params, t0 = t, **args)
 
 if __name__ == "__main__":
     from datetime import datetime
