@@ -178,12 +178,13 @@ class TaskQueue(PyThread):
             after = time.time() + after
         task._Private.After = after.timestamp() if isinstance(after, datetime) else after
         task._Private.Promise = promise = Promise(data=promise_data)
-        if mode == "insert":
-            self.Queue.insert(task, timeout = timeout, force=force)
-        else:           # mode == "append"
-            self.Queue.append(task, timeout = timeout, force=force)
+        with self:
+            if mode == "insert":
+                self.Queue.insert(task, timeout = timeout, force=force)
+            else:           # mode == "append"
+                self.Queue.append(task, timeout = timeout, force=force)
         task._queued()
-        self.wakeup()
+        self.tick()
         return promise
 
     def append(self, task, *params, timeout=None, promise_data=None, after=None, force=False, **args):
@@ -284,6 +285,40 @@ class TaskQueue(PyThread):
                 else:
                     self.sleep(10)
 
+    def tick(self):
+        again = True
+        while not self.Stop and again:
+            again = False
+            now = time.time()
+            if self.Stagger is not None and self.LastStart + self.Stagger > now:
+                self.alarm(self.LastStart + self.Stagger, self.tick)
+            else:
+                with self:
+                    queued = self.Queue.items()
+                    nrunning = len(self.Threads)
+                if queued and (self.NWorkers is None or nrunning < self.NWorkers) and not self.Held:
+                    next_task = None
+                    sleep_until = None
+                    for t in queued:
+                        after = t._Private.After
+                        if after is None or after <= now:
+                            next_task = t
+                            break
+                        else:
+                            sleep_until = after if sleep_until is None else min(sleep_until, after)
+                    if next_task is not None:
+                        self.Queue.remove(next_task)
+                        t = self.ExecutorThread(self, next_task)
+                        t.kind = "%s.task" % (self.kind,)
+                        self.Threads.append(t)
+                        self.call_delegate("taskIsStarting", self, next_task)
+                        self.LastStart = time.time()
+                        t.start()
+                        self.call_delegate("taskStarted", self, next_task)
+                        again = True
+                    elif sleep_until is not None:
+                        self.alarm(sleep_until, self.tick)
+
     @synchronized
     def threadEnded(self, t):
         #print("queue.threadEnded: ", t)
@@ -293,7 +328,7 @@ class TaskQueue(PyThread):
         if task.Resubmit:
             after = None if task.ResubmitInterval is None else task.Queued + task.ResubmitInterval
             self.add(task, after=after, force=True)
-        self.wakeup()
+        self.tick()
         
     def call_delegate(self, cb, *params):
         if self.Delegate is not None and hasattr(self.Delegate, cb):
@@ -367,7 +402,7 @@ class TaskQueue(PyThread):
         Releses the queue, allowing new tasks to start
         """        
         self.Held = False
-        self.wakeup()
+        self.tick()
         
     @synchronized
     def is_empty(self):
@@ -425,6 +460,7 @@ class TaskQueue(PyThread):
             raise ValueError("Task not in the queue")
         task._Private.Promise.complete()
         self.call_delegate("taskCancelled", self, task)
+        self.tick()
         return task
 
     def __len__(self):
