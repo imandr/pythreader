@@ -122,6 +122,12 @@ class Primitive:
             self._WakeUp.notifyAll()
         else:
             self._WakeUp.notify(n)
+            
+    def alarm(self, t, fcn=None, *params, **args):
+        from .Scheduler import schedule_job
+        if fcn is None:
+            fcn = self.wakeup
+        schedule_job(t, fcn, *params, **args)
 
 if sys.version_info < (3,0):
     # await is a reserved word in Python 3, keep it for backward compatibility

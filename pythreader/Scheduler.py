@@ -19,9 +19,13 @@ class Job(object):
         
     __repr__ = __str__
         
-    def execute(self):
+    def run(self):
         start = time.time()
-        next_t = self.F(*self.Params, **self.Args)
+        exc_info = None
+        try:    next_t = self.F(*self.Params, **self.Args)
+        except:
+            exc_info = sys.exc_info()
+            next_t = None
         if next_t is None:
             if self.Interval is not None:
                 next_t = start + self.Interval + random.random() * self.Jitter
@@ -30,47 +34,48 @@ class Job(object):
         elif next_t < 3.0e7:
             # if next_t is < 1980, it's relative time
             next_t += start + random.random() * self.Jitter
-        return next_t
+        return next_t, exc_info
 
-class JobTask(Task):
+class JobThread(PyThread):
     
     def __init__(self, scheduler, job):
-        Task.__init__(self, name=f"JobTask({job.ID})")
+        PyThread.__init__(self, name=f"Scheduler({scheduler})/job{job.ID}", daemon=True)
         self.Scheduler = scheduler
         self.Job = job
-        self.JobID = job.ID
-
-    def __str__(self):
-        return f"JobTask({self.Job.ID})"
-
-    __repr__ = __str__
-
+        
     def run(self):
-        job = self.Job
         scheduler = self.Scheduler
-        self.Job = self.Scheduler = None         # break circual links
-        next_t = job.execute()
-        if next_t is not None:
-            scheduler.add_job(job, next_t)
+        job = self.Job
+        self.Job = self.Scheduler = None
+        next_t, exc_info = job.run()
+        if exc_info:
+            scheduler.job_failed(job, next_t, *exc_info)
+        else:
+            scheduler.job_ended(job, next_t)
 
 class Scheduler(PyThread):
     def __init__(self, max_concurrent = 10, stop_when_empty = False, delegate=None, daemon=False, name=None, **args):
         PyThread.__init__(self, daemon=daemon, name=name)
         self.Timeline = []      # [job, ...]
-        self.Queue = TaskQueue(max_concurrent, delegate=self, **args)
         self.Delegate = delegate
         self.StopWhenEmpty = stop_when_empty
         self.Stop = False
 
     # delegate interface used to wait until the task queue is empty
-    def taskEnded(self, queue, task, result):
+    def job_ended(self, job, next_t):
         if self.Delegate is not None and hasattr(self.Delegate, "jobEnded"):
-            self.Delegate.jobEnded(self, task.JobID)
+            try:    self.Delegate.jobEnded(self, task.JobID)
+            except: pass
+        if next_t is not None:
+            self.add_job(job, next_t)
         self.wakeup()
 
-    def taskFailed(self, queue, task, exc_type, exc_value, tb):
+    def job_failed(self, job, next_t, exc_type, exc_value, tb):
         if self.Delegate is not None and hasattr(self.Delegate, "jobFailed"):
-            self.Delegate.jobFailed(self, task.JobID, exc_type, exc_value, tb)
+            try:    self.Delegate.jobFailed(self, job.ID, exc_type, exc_value, tb)
+            except: pass
+        if next_t is not None:
+            self.add_job(job, next_t)
         self.wakeup()
 
     def stop(self):
@@ -80,7 +85,7 @@ class Scheduler(PyThread):
     @synchronized
     def add_job(self, job, t):
         job.NextT = t
-        self.Timeline = sorted(self.Timeline + [job], key=lambda j: j.NextT)
+        self.Timeline.append(job)
         self.wakeup()
         
     @synchronized        
@@ -115,33 +120,36 @@ class Scheduler(PyThread):
     @synchronized
     def remove(self, job_id):
         self.Timeline = [j for j in self.Timeline if j.ID != job_id]
-        
-    @synchronized        
-    def tick(self):
-        while self.Timeline:
-            job = self.Timeline[0]
+
+    @synchronized
+    def run_jobs(self):
+        keep_jobs = []
+        next_run = None
+        for job in self.Timeline:
             if job.NextT <= time.time():
-                self.Timeline.pop(0)
-                self.Queue.addTask(JobTask(self, job))
+                t = JobThread(self, job)
+                t.start()
+                self.wakeup()
             else:
-                break
-                
-    @synchronized        
+                next_run = min(next_run or job.NextT, job.NextT)
+                keep_jobs.append(job)
+        self.Timeline = keep_jobs
+        return next_run
+
+    @synchronized
     def is_empty(self):
-        return not self.Timeline and self.Queue.is_empty()
-                        
+        return not self.Timeline
+
     def run(self):
         while not self.Stop and not (self.is_empty() and self.StopWhenEmpty):
+            delta = 100
             if self.Timeline:
-                with self:
-                    tmin = self.Timeline[0].NextT
-                    now = time.time()
-                    delta = tmin - time.time()
-                    self.sleep(delta)
-            elif not (self.Queue.is_empty() and self.StopWhenEmpty):
-                self.sleep(10)
-            self.tick()
-            
+                next_t = self.run_jobs()
+                if next_t is not None:
+                    delta = next_t - time.time()
+            if delta > 0:
+                self.sleep(delta)
+
     @synchronized        
     def wait_until_empty(self):
         while not self.is_empty():
