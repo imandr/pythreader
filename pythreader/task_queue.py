@@ -304,11 +304,7 @@ class TaskQueue(PyThread):
         return self.call_delegate("taskEnded", self, task, result)
         
     def taskFailed(self, task, exc_type, exc_value, tb):
-        if self.Delegate is None:
-            print("Exception in task:", task)
-            traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
-        else:
-            return self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
+        return self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
             
     @synchronized
     def waitingTasks(self):
