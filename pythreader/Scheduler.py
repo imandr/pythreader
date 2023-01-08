@@ -1,5 +1,6 @@
 from .core import PyThread, synchronized, Primitive
 from .task_queue import Task, TaskQueue
+from .promise import Promise
 import time, uuid, traceback, random
 import sys
 
@@ -15,6 +16,7 @@ class Job(object):
         self.NextT = t
         self.Scheduler = scheduler
         self.Count = count
+        self.Promise = None
         
     def __str__(self):
         return f"Job({self.ID})"
@@ -22,12 +24,17 @@ class Job(object):
     __repr__ = __str__
         
     def run(self):
+        promise = self.Promise
+        self.Promise = None
         self.Scheduler = None           # to break circular dependencies
         start = time.time()
         exc_info = None
-        try:    next_t = self.F(*self.Params, **self.Args)
+        try:    
+            next_t = self.F(*self.Params, **self.Args)
+            promise.complete()
         except:
             exc_info = sys.exc_info()
+            promise.exception(*exc_info)
             next_t = None
         if self.Count is not None:
             self.Count -= 1
@@ -98,7 +105,9 @@ class Scheduler(PyThread):
     def add_job(self, job, t):
         job.NextT = t
         self.Timeline.append(job)
+        job.Promise = promise = Promise(job).oncancel(job.cancel)
         self.wakeup()
+        return promise
         
     @synchronized        
     def add(self, fcn, *params, interval=None, t0=None, id=None, jitter=0.0, param=None, count=None, **args):
@@ -126,8 +135,7 @@ class Scheduler(PyThread):
         elif t0 < 10*365*24*3600:           # ~ Jan 1 1980
             t0 = time.time() + t0
         job = Job(self, id, t0, interval, jitter, fcn, count, params, args)
-        self.add_job(job, t0)
-        return job
+        return self.add_job(job, t0)
         
     @synchronized
     def remove(self, job_or_id):
