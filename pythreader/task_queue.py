@@ -91,7 +91,7 @@ class FunctionTask(Task):
         self.F = self.Params = self.Args = None
         return result
         
-class TaskQueue(PyThread):
+class TaskQueue(Primitive):
     
     class ExecutorThread(PyThread):
         def __init__(self, queue, task):
@@ -125,7 +125,7 @@ class TaskQueue(PyThread):
                 task._Private.Promise = None
 
     def __init__(self, nworkers=None, capacity=None, stagger=0.0, tasks = [], delegate=None, 
-                        name=None, daemon=True, start_immediately=True):
+                        name=None):
         """Initializes the TaskQueue object
         
         Args:
@@ -144,7 +144,7 @@ class TaskQueue(PyThread):
             project_attributes (dict): attriutes to attach to the new project
             query (str): query used to create the file list, optional. If specified, the query string will be added to the project as the attribute.
         """
-        PyThread.__init__(self, name=name, daemon=daemon)
+        Primitive.__init__(self, name=name)
         self.NWorkers = nworkers
         self.Threads = []
         self.Queue = DEQueue(capacity)
@@ -156,13 +156,12 @@ class TaskQueue(PyThread):
         for t in tasks:
             self.addTask(t)
         self.Stop = False
-        if start_immediately:
-            self.start()
         
     def stop(self):
         """Stops the queue thread"""
         self.Stop = True
-        self.wakeup()
+        self.Queue.close()
+        self.cancel_alarm()
         
     def __add(self, mode, task, *params,
             timeout=None, promise_data=None, after=None, force=False, **args):
@@ -250,7 +249,7 @@ class TaskQueue(PyThread):
         """
         return self.append(task)
 
-    def run(self):
+    def ________run(self):
         while not self.Stop:
             with self:
                 now = time.time()
@@ -284,17 +283,18 @@ class TaskQueue(PyThread):
                             self.sleep(sleep_until - now)
                 else:
                     self.sleep(10)
+
     @synchronized
     def start_tasks(self):
         again = True
-        while not self.Stop and again:
+        while not self.Held and not self.Stop and again:
             again = False
             now = time.time()
             if self.Stagger is not None and self.LastStart + self.Stagger > now:
-                self.alarm(self.LastStart + self.Stagger, self.start_tasks)
-            else:
+                self.alarm(self.start_tasks, t = self.LastStart + self.Stagger)
+            elif self.Queue:
                 nrunning = len(self.Threads)
-                if self.Queue and (self.NWorkers is None or nrunning < self.NWorkers) and not self.Held:
+                if (self.NWorkers is None or nrunning < self.NWorkers):
                     next_task = None
                     sleep_until = None
                     for t in self.Queue.items():
@@ -304,8 +304,6 @@ class TaskQueue(PyThread):
                             break
                         else:
                             sleep_until = after if sleep_until is None else min(sleep_until, after)
-                    #print("next_task:", next_task)
-                    #print("queue:", self.Queue.items())
                     if next_task is not None:
                         self.Queue.remove(next_task)
                         t = self.ExecutorThread(self, next_task)
@@ -317,7 +315,7 @@ class TaskQueue(PyThread):
                         self.call_delegate("taskStarted", self, next_task)
                         again = True
                     elif sleep_until is not None:
-                        self.alarm(sleep_until, self.start_tasks)
+                        self.alarm(self.start_tasks, t=sleep_until)
 
     @synchronized
     def threadEnded(self, t):
@@ -439,7 +437,6 @@ class TaskQueue(PyThread):
         Discards all waiting tasks
         """
         self.Queue.flush()
-        self.wakeup()
 
     @synchronized
     def cancel(self, task):

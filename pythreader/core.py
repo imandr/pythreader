@@ -62,6 +62,7 @@ class Primitive:
         self._WakeUp = Condition(self._Lock)
         self._Gate = Semaphore(gate)
         self.Name = name
+        self.Timer = None
         
     def __str__(self):
         ident = ('"%s"' % (self.Name,)) if self.Name else ("@%s" % (("%x" % (id(self),))[-4:],))
@@ -123,11 +124,17 @@ class Primitive:
         else:
             self._WakeUp.notify(n)
             
-    def alarm(self, t, fcn=None, *params, **args):
-        from .Scheduler import schedule_job
-        if fcn is None:
-            fcn = self.wakeup
-        schedule_job(t, fcn, *params, **args)
+    @synchronized
+    def alarm(self, *params, **args):
+        if self.Timer is not None:
+            self.Timer.cancel()
+        self.Timer = Timer(*params, **args)
+
+    @synchronized
+    def cancel_alarm(self):
+        if self.Timer is not None:
+            self.Timer.cancel()
+            self.Timer = None
 
 if sys.version_info < (3,0):
     # await is a reserved word in Python 3, keep it for backward compatibility
@@ -139,29 +146,62 @@ class PyThread(Thread, Primitive):
     def __init__(self, *params, name=None, **args):
         Thread.__init__(self, *params, **args)
         Primitive.__init__(self, name=name)
+        self.Stop = False
+        
+    def stop(self):
+        self.Stop = True
 
-class TimerThread(PyThread):
-    def __init__(self, function, interval, *params, **args):
-        PyThread.__init__(self, daemon=True)
-        self.Interval = interval
-        self.Func = function
+class Timer(PyThread):
+    
+    def __init__(self, fcn, *params, t=None, interval=None, start=True, name=None, daemon=True, onexception=None, **args):
+        PyThread.__init__(self, name=name, daemon=daemon)
+        if t is None:
+            self.T = time.time() + interval
+        else:
+            self.T = t if t > 3e8 else time.time() + t
+        self.Fcn = fcn
+        self.OnException = onexception
         self.Params = params
         self.Args = args
-        self.Pause = False
+        self.Interval = interval
+        self.Cancelled = False
+        self.Paused = False
+        if start:
+            self.start()
 
     def run(self):
-        while True:
-            while self.Pause:
-                self.sleep()
-            self.Func(*self.Params, **self.Args)
-            time.sleep(self.Interval)
-    
-    def pause(self):
-        self.Pause = True
-        
-    def resume(self):
-        self.Pause = False
+        try:
+            again = True
+            while again and not self.Cancelled:
+                again = False
+                now = time.time()
+                if now < self.T:
+                    self.sleep(self.T - now)
+                while self.Paused and not self.Cancelled:
+                    self.sleep(100)
+                if not self.Cancelled:
+                    try:    self.Fcn(*self.Params, **self.Args)
+                    except:
+                        if self.OnException is not None:
+                            try:
+                                self.OnException(*sys.exc_info())
+                            except:
+                                pass
+                    if not self.Cancelled and self.Interval:
+                        self.T = time.time() + self.Interval
+                        again = True
+        finally:
+            # to break any circular links
+            self.Fcn = self.Args = self.Params = None
+
+    def cancel(self):
+        self.Cancelled = True
         self.wakeup()
-                
-            
-            
+
+    def pause(self):
+        self.Paused = True
+        self.wakeup()
+
+    def resume(self):
+        self.Paused = False
+        self.wakeup()
