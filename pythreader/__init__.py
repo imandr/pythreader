@@ -1,4 +1,5 @@
-from .core import Primitive, synchronized, PyThread, gated, TimerThread, Timeout
+from .core import Primitive, synchronized, PyThread, gated, Timeout
+from .timer import Timer
 from .dequeue import DEQueue
 from .task_queue import TaskQueue, Task
 from .Scheduler import Scheduler, schedule_job
