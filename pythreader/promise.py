@@ -117,8 +117,7 @@ class Promise(Primitive):
                 raise Timeout()
         finally:
             self._cleanup()
-            
-            
+
     def _cleanup(self):
         self.Chained = []
         self.Callbacks = []
