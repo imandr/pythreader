@@ -110,7 +110,7 @@ class Scheduler(PyThread):
         return promise
         
     @synchronized        
-    def add(self, fcn, *params, interval=None, t0=None, id=None, jitter=0.0, param=None, count=None, **args):
+    def add(self, fcn, *params, interval=None, t=None, t0=None, id=None, jitter=0.0, param=None, count=None, **args):
         #
         # t0 - first time to run the task. Default:
         #   now + interval or now if interval is None
@@ -126,6 +126,7 @@ class Scheduler(PyThread):
         #       int or float - next time to run
         #       None - run at now+interval next time
         #
+        if t is None: t = t0            # alias, t0 is deprecated
         if param is not None:       # for backward compatibility
             params = (param,)
         if id is None:
@@ -190,10 +191,10 @@ def init_global_scheduler(name="GlobalScheduler", **args):
                 _GlobalScheduler = Scheduler(name=name, **args)
                 _GlobalScheduler.start()
 
-def schedule_job(t, fcn, *params, **args):
+def schedule_job(fcn, *params, **args):
     global _GlobalScheduler
     init_global_scheduler()         # init if needed
-    return _GlobalScheduler.add(fcn, *params, t0 = t, **args)
+    return _GlobalScheduler.add(fcn, *params, **args)
 
 if __name__ == "__main__":
     from datetime import datetime
