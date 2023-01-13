@@ -56,6 +56,14 @@ class UnlockContext(object):
 
 class Primitive:
     def __init__(self, gate=1, lock=None, name=None):
+        """
+        Initiaslized the Primitive object
+        
+        Args:
+            gate (int): initial value for the Gate semapthore. Default = 1
+            lock (Lock or RLock): Lock or RLock for the primitive to use. Default - new RLock object
+            name (str): Name for the primitive. Default - unnamed
+        """
         self._Kind = self.__class__.__name__
         self._Lock = lock if lock is not None else RLock()
         #print ("Primitive:", self, " _Lock:", self._Lock)
@@ -77,20 +85,42 @@ class Primitive:
     kind = property(__get_kind, __set_kind)
 
     def getLock(self):
+        """Returns the primitive's lock object
+        
+        Returns:
+            Lock or RLock: primitive's lock object
+        """
         return self._Lock
         
     def __enter__(self):
-        #t = currentThread()
-        #print ">>>entry by thread %s %x: %s %x..." % (t.__class__.__name__, id(t), self.kind, id(self))
+        """Primitive's context entry. Using a primitve as a context is equivalent to using its
+        lock as the context. The following are equivalent:
+        
+            with my_primitive:
+                ...
+        
+            with my_primitive.getLock():
+                ...
+        """
         return self._Lock.__enter__()
         
     def __exit__(self, exc_type, exc_value, traceback):
-        #t = currentThread()
-        #print "<<<<exit by thread %s %x: %s %x" % (t.__class__.__name__, id(t), self.kind, id(self))
+        """Primitive's context exit
+        """
         return self._Lock.__exit__(exc_type, exc_value, traceback)
     
     @property
     def unlock(self):
+        """Creates a context which can be used to temporarily release the lock acquired on the
+        primitive eariler. For example:
+        
+            with my_primitive:
+                # do something, which needs to be done while the primitive is locked
+                with my_primitive.unlock:
+                    # temporarily unlock the primitive and do something else
+                # re-acquire the primitive's lock again, possibly waiting for it
+                # continue doing something while the primitive is locked again
+        """
         return UnlockContext(self)
 
     @synchronized
