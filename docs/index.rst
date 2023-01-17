@@ -9,8 +9,10 @@ Welcome to pythreader's documentation!
 Contents:
 
 .. toctree::
-   :maxdepth: 2
+    :maxdepth: 2
 
+    core
+    intro
 
 
 Indices and tables
