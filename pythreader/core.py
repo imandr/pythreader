@@ -57,7 +57,7 @@ class UnlockContext(object):
 class Primitive:
     def __init__(self, gate=1, lock=None, name=None):
         """
-        Initiaslized the Primitive object
+        Initiaslizes new Primitive object
         
         Args:
             gate (int): initial value for the Gate semapthore. Default = 1
@@ -85,7 +85,7 @@ class Primitive:
     kind = property(__get_kind, __set_kind)
 
     def getLock(self):
-        """Returns the primitive's lock object
+        """Returns the primitive's lock object. It can be used to create Primitives using the same lock object.
         
         Returns:
             Lock or RLock: primitive's lock object
@@ -102,6 +102,8 @@ class Primitive:
             with my_primitive.getLock():
                 ...
         """
+        if self._Lock.locked():
+            print(f"{self.Name} is locked...")
         return self._Lock.__enter__()
         
     def __exit__(self, exc_type, exc_value, traceback):
@@ -125,6 +127,12 @@ class Primitive:
 
     @synchronized
     def sleep(self, timeout = None, function=None, arguments=()):
+        """
+        Blocks until wakep() method is called on the same primitive.
+        
+        Args:
+            timeout (float or int): time-out. If timed-out, RuntimeError exception will be raised.
+        """
         #print("sleep", self, get_ident(), "   condition lock:", self._WakeUp._lock, "...")
         self._WakeUp.wait(timeout)
         if function is not None:
@@ -132,6 +140,22 @@ class Primitive:
 
     @synchronized
     def sleep_until(self, predicate, *params, timeout = None, **args):
+        """
+        Blocks until a condition is satisfied. The method will continue calling sleep() and when it wakes up, it will call the
+        predicate function and check if the predicate is satisfied and if not go back to sleep. The predicate function is
+        expected to return True or False. Basically, sleep_until runs this loop:
+        
+            while not timed-out:
+                primitive.sleep()
+                if predicate(*params, **args):
+                    break
+
+        Args:
+            predicate (function): a function returning True or False. The method will exit when the function returns True
+            params: positional arguments to pass to each predicate function call
+            args: keyword arguments to pass to each predicate function call
+            timeout (int or float): timeout. If timed-out, RuntimeError exception will be raised
+        """
         #print("sleep", self, get_ident(), "   condition lock:", self._WakeUp._lock, "...")
         t1 = None if timeout is None else time.time() + timeout
         while (t1 is None or time.time() < t1):
@@ -144,9 +168,15 @@ class Primitive:
         else:
             raise Timeout()
             
-    # await is a reserved word in Python 3, use "wakeup" instead
     @synchronized
     def wakeup(self, n=1, all=True, function=None, arguments=()):
+        """Wakes up all or some thread, which is sleeping on the primitive.
+        
+        Args:
+            n (int): number of threads to wake up. Default is 1
+            all (bool): wake up all threads sleeping on the primitive. If True, ``n`` argument is ignored
+        """
+        
         if function is not None:
             function(*arguments)
         if all:
@@ -156,24 +186,37 @@ class Primitive:
             
     @synchronized
     def alarm(self, *params, **args):
+        """Starts a new "alarm" Timer thread associated with the Primitive. A Primitive can have only one alarm thread associated with it.
+        If another alarm thread was already created using a previous call to alarm(), the old thread will be cancelled and
+        deleted.
+        
+        Args:
+            params: positional arguments to pass to the Timer constructor
+            args: keyword arguments to pass to the Timer constructor
+        """
         if self.Timer is not None:
             self.Timer.cancel()
         self.Timer = Timer(*params, **args)
 
     @synchronized
     def cancel_alarm(self):
+        """
+        Cancels the alarm thread associated with the Primitive, if any. 
+        """
+        
         if self.Timer is not None:
             self.Timer.cancel()
             self.Timer = None
 
-if sys.version_info < (3,0):
-    # await is a reserved word in Python 3, keep it for backward compatibility
-    # in Python 2.
-    setattr(Primitive, "await", Primitive.sleep)
-
-
 class PyThread(Thread, Primitive):
     def __init__(self, *params, name=None, **args):
+        """Initializes a new PyThread object. PyThread is a subclass of both threading.Thread and Primitive, so it combines features of both.
+        
+        Args:
+            name (string):  Name for the Primitive
+            params: positional arguments for threading.Thread constructor
+            args: keyword arguments for threading.Thread constructor
+        """
         Thread.__init__(self, *params, **args)
         Primitive.__init__(self, name=name)
         self.Stop = False
@@ -184,6 +227,23 @@ class PyThread(Thread, Primitive):
 class Timer(PyThread):
     
     def __init__(self, fcn, *params, t=None, interval=None, start=True, name=None, daemon=True, onexception=None, **args):
+        """Initializes new Timer thread. pythreader's Timer is similar in functionality with threading.Timer, but it has additional
+        functionality. In particular pythreader's Timer can run as a periodic timer, firing at specified frequency until it is cancelled.
+        
+        Args:
+            fcn (function): function to call every time the Timer fires
+            params: positional arguments to pass to the ``fcn``
+            args: keyword arguments to pass to the ``fcn``
+            t (numeric): specifies the time when to fire the Timer first time. ``t`` can be either absolute timestamp - time in seconds since the
+                Epoch or relative to current time. If ``t`` is less than 3e8 (~10 years), then it is interpreted as relative to current time.
+                Default: current time plus ``interval``
+            start (bool): to start the Timer thread immediately. Otherwise, the Timer thread will be created but not run until started explicitly
+                using ``start()`` method. Default: start immediately
+            daemon (bool): whether the Timer thread should be a daemon thread. Default: True
+            onexception (function): a callback to call if ``fcn`` raies an exception. The callback will be called with 3 arguments:
+                exception type, exception value and the traceback, similar to what sys.exc_info() returns. Default: ignore any exceptions raised by ``fcn``
+        """
+        
         PyThread.__init__(self, name=name, daemon=daemon)
         if t is None:
             self.T = time.time() + interval
@@ -225,13 +285,20 @@ class Timer(PyThread):
             self.Fcn = self.Args = self.Params = None
 
     def cancel(self):
+        """Cancels the Timer thread
+        """
         self.Cancelled = True
         self.wakeup()
 
     def pause(self):
+        """Pauses the Timer thread. In fact the thread will continue running, but it will not fire intil ``resume`` method is called
+        """
         self.Paused = True
         self.wakeup()
 
     def resume(self):
+        """Resumes the timer firing. Next time the timer will not necessarily fire immediately when resumed, but it will fire at the next
+        end of the firing interval.
+        """
         self.Paused = False
         self.wakeup()
