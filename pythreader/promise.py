@@ -50,12 +50,11 @@ class Promise(Primitive):
     @synchronized
     def then(self, oncomplete=None, onexception=None):
         """
-        Creates new Promise object, which will be chained to the ``self`` promise with provided ``oncomplete`` and ``onexception`` callbacks.
+        Creates new Promise object, which will be chained to the ``self`` promise with provided ``oncomplete`` and/or ``onexception`` callbacks.
         
         Args:
-            data: Arbitrary user-defined data to be associated with the promise. Can be anything. pythreader does not use it.
-            callbacks (list): List of Promise callbacks objects. Each object may have ``oncomplete`` and/or ``onexception`` methods defined. See Notes below.
-            name (string): Name for the new Promise object, optional.
+            oncomplete (function): the new promise completion callback function
+            oncexception (function): the new promise exception callback function
         """
         p = Promise()
         if oncomplete is not None:
@@ -67,6 +66,14 @@ class Promise(Primitive):
 
     @synchronized
     def oncomplete(self, cb):
+        """Sets promise completion callback. If the promise has already completed, the callback function is called immediately.
+        Old completion callback is removed.
+
+        Args:
+            cb (function):    Function to be called when the promise completes. The function will be called with the following arguments:
+
+                cb(promise, result)
+        """
         if self.Complete:
             cb(self, self.Result)
         self.OnComplete = cb
@@ -74,6 +81,14 @@ class Promise(Primitive):
         
     @synchronized
     def onexception(self, cb):
+        """Sets promise exception callback. If the promise has failed already, the callback function will be called immediately.
+        Old exception callback is removed.
+        
+        Args:
+            cb (function):    Function to be called when the promise fails. The function will be called with the following arguments:
+        
+                cb(promise, exception_type, exception_value, traceback)
+        """
         if self.ExceptionInfo:
             cb(self, *self.ExceptionInfo)
         self.OnException = cb
@@ -81,6 +96,13 @@ class Promise(Primitive):
         
     @synchronized
     def oncancel(self, cb):
+        """Sets promise cancellation callback. If the promise has been cancelled already, the callback function will be called immediately.
+        Old cancellation callback is removed.
+        
+        Args:
+            cb (function):    Function to be called when the promise is cancelled. The function will be called with the promise as the only
+                argiment.
+        """
         if self.Cancelled:
             cb(self)
         self.OnCancel = cb
@@ -88,18 +110,40 @@ class Promise(Primitive):
         
     @synchronized
     def addCallback(self, cb):
-        if not self.Cancelled:
-            if self.Cancelled and hasattr(cb, "oncancel"):
-                cb.oncancel(self)
-            elif self.Complete and hasattr(cb, "oncomplete"):
-                cb.oncomplete(self, self.Result)
-            elif self.ExceptionInfo and hasattr(cb, "onexception"):
-                cb.onexception(self, *self.ExceptionInfo)
+        """Adds a new promise callback object to the promise callback list. If the promise has completed, failed or cancelled already,
+            the new callback object will be notified immediately and will not be added to the list.
+        
+        Args:
+            cb (object):    New Promise callback object. The callback object is expected to have some (or none) of the following methods:
+        
+                def oncancel(self, promise):
+                    # the promise was cancelled
+
+                def oncomplete(self, promise, result):
+                    # the promise completed
+
+                def onexception(self, promise, exception_type, exception_value, traceback):
+                    # the promise failed        
+        """
+        if self.Cancelled and hasattr(cb, "oncancel"):
+            cb.oncancel(self)
+        elif self.Complete and hasattr(cb, "oncomplete"):
+            cb.oncomplete(self, self.Result)
+        elif self.ExceptionInfo and hasattr(cb, "onexception"):
+            cb.onexception(self, *self.ExceptionInfo)
+        else:
             self.Callbacks.append(cb)
         return self
 
     @synchronized
     def chain(self, *promises, cancel_chained = True):
+        """Adds new chained promises to ``self``. If the ``self`` promise has delivered (completed or failed) already, the new
+        promises will be delivered with the same status immediately. If the ``self`` promise has been cancelled, the new promises will be cancelled too.
+        
+        Args:
+            promises (list of Promises): list of promises to add as chained
+            cancel_chained (bool): whether to cancel the new promises if the ``self`` promise has been cancelled. Default = True
+        """
         if self.ExceptionInfo:
             exc_type, exc_value, exc_traceback = self.ExceptionInfo
             for p in promises:
@@ -116,6 +160,11 @@ class Promise(Primitive):
 
     @synchronized
     def complete(self, result=None):
+        """Delivers the promise as successfully completed with given result
+            
+            Args:
+                result: the promise result to be delivered
+        """
         self.Result = result
         self.Complete = True
         if not self.Cancelled:
@@ -134,6 +183,13 @@ class Promise(Primitive):
 
     @synchronized
     def exception(self, exc_type, exc_value, exc_traceback):
+        """Fails the promise with the exception
+            
+            Args:
+                exc_type: exception type
+                exc_value: exception value
+                exc_traceback: exception traceback
+        """
         self.ExceptionInfo = (exc_type, exc_value, exc_traceback)
         if not self.Cancelled:
             stop = False
@@ -153,6 +209,11 @@ class Promise(Primitive):
 
     @synchronized
     def cancel(self, cancel_chained = True):
+        """Cancels the promise
+        
+        Args:
+            cancel_chained (bool): whether to cancel chained promises too. Default = True
+        """
         if not self.Cancelled:
             stop = False
             if self.OnCancel is not None:
@@ -172,6 +233,19 @@ class Promise(Primitive):
 
     @synchronized
     def wait(self, timeout=None):
+        """Blocks until the promise closes (completes, fails or gets cancelled).
+        
+        Args:
+            timeout (numeric): Time-out in seconds. If the operation times out, the RuntimeError exception will be raised.
+        
+        Returns:
+            Object: promise result, if the promise completes successfully. If the promsie is cancelled, None is returned.
+        
+        Raises:
+            If the promise fails with an exception and the exception was not handled by one of the promise's callbacks,
+            then the original exception will be raised.
+        """
+        
         #print("thread %s: wait(%s)..." % (get_ident(), self))
         pred = lambda x: x.Complete or x.Cancelled or self.ExceptionInfo is not None
         self.sleep_until(pred, self, timeout=timeout)
@@ -182,8 +256,8 @@ class Promise(Primitive):
                 return None
             elif self.ExceptionInfo:
                 if self.RaiseException:
-                    _, e, _ = self.ExceptionInfo
-                    raise e 
+                    _, e, tb = self.ExceptionInfo
+                    raise e.with_traceback(tb)
             else:
                 raise Timeout()
         finally:
@@ -196,6 +270,12 @@ class Promise(Primitive):
 
     @staticmethod
     def all(*args):
+        """Static method to create an ``ANDPromise`` - a promise-like object, which represents completion of all the argument promsies. 
+        
+        Args:
+            *args: promise objects to combine
+        """
+        
         if args and isinstance(args[0], (tuple, list)):
             promises = args[0]
         else:
@@ -204,6 +284,11 @@ class Promise(Primitive):
 
     @staticmethod
     def any(*args):
+        """Static method to create an ``ORPromise`` - a promise-like object, which represents completion of one of the argument promsies. 
+        
+        Args:
+            *args: promise objects to combine
+        """
         if args and isinstance(args[0], (tuple, list)):
             promises = args[0]
         else:

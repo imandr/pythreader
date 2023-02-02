@@ -18,10 +18,8 @@ def threadName():
 def synchronized(method):
     def smethod(self, *params, **args):
         me = get_ident()
-        #print("entering synchronized", self, me)
         with self:
             out = method(self, *params, **args)
-        #print("exiting synchronized", self, me)
         return out
     smethod.__doc__ = method.__doc__
     return smethod
@@ -102,8 +100,6 @@ class Primitive:
             with my_primitive.getLock():
                 ...
         """
-        if self._Lock.locked():
-            print(f"{self.Name} is locked...")
         return self._Lock.__enter__()
         
     def __exit__(self, exc_type, exc_value, traceback):
@@ -115,7 +111,7 @@ class Primitive:
         """Returns True if the thread can lock the Primitive's lock immediately, False otherwise.
         Does not guarantee that a subsequent attempt to lock the Primitive will succeed immediately.
         """
-        if self._Lock.acquire(blocking=False)
+        if self._Lock.acquire(blocking=False):
             self._Lock.release()
             return True
         else:

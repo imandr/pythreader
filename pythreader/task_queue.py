@@ -249,41 +249,6 @@ class TaskQueue(Primitive):
         """
         return self.append(task)
 
-    def ________run(self):
-        while not self.Stop:
-            with self:
-                now = time.time()
-                if self.Stagger is not None and self.LastStart + self.Stagger > now:
-                    self.sleep(self.LastStart + self.Stagger - now)
-                elif self.Queue \
-                            and (self.NWorkers is None or len(self.Threads) < self.NWorkers) \
-                            and not self.Held:
-                    queued = self.Queue.items()
-                    next_task = None
-                    sleep_until = None
-                    for t in queued:
-                        after = t._Private.After
-                        if after is None or after <= now:
-                            next_task = t
-                            break
-                        else:
-                            sleep_until = after if sleep_until is None else min(sleep_until, after)
-                    if next_task is not None:
-                        self.Queue.remove(next_task)
-                        t = self.ExecutorThread(self, next_task)
-                        t.kind = "%s.task" % (self.kind,)
-                        self.Threads.append(t)
-                        self.call_delegate("taskIsStarting", self, next_task)
-                        self.LastStart = time.time()
-                        t.start()
-                        self.call_delegate("taskStarted", self, next_task)
-                    else:
-                        now = time.time()
-                        if now < sleep_until:
-                            self.sleep(sleep_until - now)
-                else:
-                    self.sleep(10)
-
     @synchronized
     def start_tasks(self):
         again = True

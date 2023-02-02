@@ -30,12 +30,18 @@ class Job(object):
         start = time.time()
         exc_info = None
         try:    
+            #print(f"Job({self.ID}): running:", self.F, self.Params, self.Args)
             next_t = self.F(*self.Params, **self.Args)
             promise.complete()
-        except:
+        except Exception as e:
+            #print(f"Job({self.ID}):", e)
             exc_info = sys.exc_info()
+            #print(f"Job({self.ID}): exception:", traceback.format_exc())
             promise.exception(*exc_info)
             next_t = None
+        else:
+            #print(f"Job({self.ID}): done")
+            pass
         if self.Count is not None:
             self.Count -= 1
             if self.Count <= 0:
@@ -50,6 +56,9 @@ class Job(object):
         return next_t, exc_info
         
     def cancel(self):
+        """Cancels the job. If the job is currently running, it will not be stopped, but if it's a repeating job, calling this
+        method will prevent the job from running again.
+        """
         try: 
             self.Scheduler.remove(self)
         except: pass
@@ -73,15 +82,28 @@ class JobThread(PyThread):
             scheduler.job_ended(job, next_t)
 
 class Scheduler(PyThread):
-    def __init__(self, max_concurrent = 10, stop_when_empty = False, delegate=None, daemon=False, name=None, **args):
+    def __init__(self, max_concurrent = 100, stop_when_empty = False, delegate=None, daemon=True, name=None, start=True, **args):
+        """
+        Args:
+            max_concurrent (int): maximum number of concurrent jobs to run. Default: 100
+            stop_when_empty (bool): stops the Scheduler thread when all the jobs complete. Default: False
+            delegate (object): an object to notify when a job ends or fails
+            daemon (bool): whether the Scheduler thread will run as daemon. Default: False
+            name (str): name of the Scheduler
+            start (bool): whether to start the Scheduler immediately on initialization. If False, the Scheduler needs to be started
+                by calling ``start()`` method. Default: True
+        """
         PyThread.__init__(self, daemon=daemon, name=name)
         self.Timeline = []      # [job, ...]
         self.Delegate = delegate
         self.StopWhenEmpty = stop_when_empty
         self.Stop = False
+        if start:
+            self.start()
 
     # delegate interface used to wait until the task queue is empty
     def job_ended(self, job, next_t):
+        #print("job_ended:", job.ID)
         if self.Delegate is not None and hasattr(self.Delegate, "jobEnded"):
             try:    self.Delegate.jobEnded(self, task.JobID)
             except: pass
@@ -90,14 +112,20 @@ class Scheduler(PyThread):
         self.wakeup()
 
     def job_failed(self, job, next_t, exc_type, exc_value, tb):
+        #print("job_failed:", job.ID)
         if self.Delegate is not None and hasattr(self.Delegate, "jobFailed"):
             try:    self.Delegate.jobFailed(self, job.ID, exc_type, exc_value, tb)
             except: pass
         if next_t is not None:
             self.add_job(job, next_t)
         self.wakeup()
+        
+    @synchronized
+    def jobs(self):
+        return self.Timeline[:]
 
     def stop(self):
+        """Stops the Scheduler thread"""
         self.Stop = True
         self.wakeup()
         
@@ -111,6 +139,24 @@ class Scheduler(PyThread):
         
     @synchronized        
     def add(self, fcn, *params, interval=None, t=None, t0=None, id=None, jitter=0.0, param=None, count=None, **args):
+        """Adds a new job to the schedule.
+        
+        Args:
+            fcn (callable): will be called when the job starts
+            params: positional arguments to pass to ``fcn``
+            args: keyword arguments to to pass to ``fcn``
+            interval (numeric): interval to repeat the job. Default: None (do not repeat)
+            count (int): if ``interval`` is specified, specifies how many times to repeat the job. Default: unlimited
+            t (numeric): pecifies the time when to fire the Timer first time. ``t`` can be either absolute timestamp - time in seconds since the
+                Epoch or relative to current time. If ``t`` is less than 3e8 (~10 years), then it is interpreted as relative to current time.
+                Default: current time plus ``interval``
+            id (str): id to assign to the job. If None, the id will be generated automatically
+            t0 - deprecated, alias to t, retained for backward compatibility
+            param: deprecated, single positional parameter to pass to ``fcn``. Use ``params`` instead        
+        
+        Returns:
+            Job: job object
+        """
         #
         # t0 - first time to run the task. Default:
         #   now + interval or now if interval is None
@@ -140,6 +186,11 @@ class Scheduler(PyThread):
         
     @synchronized
     def remove(self, job_or_id):
+        """Removes the job from the schedule. Will not stop the job if it is already running.
+        
+        Args:
+            job_or_id: Either the Job object returned by the ``add`` method, or job id (str)
+        """
         job_id = job_or_id if isinstance(job_or_id, str) else job_or_id.ID
         self.Timeline = [j for j in self.Timeline if j.ID != job_id]
 
@@ -160,6 +211,9 @@ class Scheduler(PyThread):
 
     @synchronized
     def is_empty(self):
+        """Returns True if there are no pending jobs on the schedule. Note that if a repeating job is currently running, it will not
+        be on the schedule until it completes or fails.
+        """
         return not self.Timeline
 
     def run(self):
@@ -175,6 +229,9 @@ class Scheduler(PyThread):
 
     @synchronized        
     def wait_until_empty(self):
+        """Wait until the schedule is empty. Note that if a repeating job is currently running, it will not
+        be on the schedule until it completes or fails.
+        """
         while not self.is_empty():
             self.sleep(10)
     
@@ -189,7 +246,6 @@ def init_global_scheduler(name="GlobalScheduler", **args):
         with _GLobalSchedulerLock:
             if _GlobalScheduler is None:
                 _GlobalScheduler = Scheduler(name=name, **args)
-                _GlobalScheduler.start()
 
 def schedule_job(fcn, *params, **args):
     global _GlobalScheduler

@@ -13,7 +13,7 @@ Contents:
 
     core
     intro
-
+    primitive
 
 Indices and tables
 ==================
