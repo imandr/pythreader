@@ -110,7 +110,17 @@ class Primitive:
         """Primitive's context exit
         """
         return self._Lock.__exit__(exc_type, exc_value, traceback)
-    
+
+    def can_lock(self):
+        """Returns True if the thread can lock the Primitive's lock immediately, False otherwise.
+        Does not guarantee that a subsequent attempt to lock the Primitive will succeed immediately.
+        """
+        if self._Lock.acquire(blocking=False)
+            self._Lock.release()
+            return True
+        else:
+            return False
+
     @property
     def unlock(self):
         """Creates a context which can be used to temporarily release the lock acquired on the
