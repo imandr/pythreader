@@ -139,10 +139,10 @@ class Primitive:
         Args:
             timeout (float or int): time-out. If timed-out, RuntimeError exception will be raised.
         """
-        #print("sleep", self, get_ident(), "   condition lock:", self._WakeUp._lock, "...")
         self._WakeUp.wait(timeout)
         if function is not None:
-            return function(*arguments)
+            result = function(*arguments)
+            return result
 
     @synchronized
     def sleep_until(self, predicate, *params, timeout = None, **args):

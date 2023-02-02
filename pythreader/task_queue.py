@@ -292,6 +292,7 @@ class TaskQueue(Primitive):
             after = None if task.ResubmitInterval is None else task.Queued + task.ResubmitInterval
             self.add(task, after=after, force=True)
         self.start_tasks()
+        self.wakeup()
         
     def call_delegate(self, cb, *params):
         if self.Delegate is not None and hasattr(self.Delegate, cb):
