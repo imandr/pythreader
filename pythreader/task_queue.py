@@ -153,9 +153,9 @@ class TaskQueue(Primitive):
         self.LastStart = 0.0
         self.StartTimer = None
         self.Delegate = delegate
+        self.Stop = False
         for t in tasks:
             self.addTask(t)
-        self.Stop = False
         
     def stop(self):
         """Stops the queue thread"""
