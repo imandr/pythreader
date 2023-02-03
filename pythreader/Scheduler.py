@@ -1,4 +1,4 @@
-from .core import PyThread, synchronized, Primitive
+from .core import PyThread, synchronized, Primitive, Timeout
 from .task_queue import Task, TaskQueue
 from .promise import Promise
 import time, uuid, traceback, random
@@ -215,17 +215,31 @@ class Scheduler(PyThread):
         be on the schedule until it completes or fails.
         """
         return not self.Timeline
+        
+    
+    @synchronized
+    def _next_run(self):
+        # returns run time of first job to run
+        if self.Timeline:
+            return min(j.NextT for j in self.Timeline)
+        else:
+            return None
+
+    @synchronized
+    def _job_is_ready(self):
+        return any(j.NextT <= time.time() for j in self.Timeline)
 
     def run(self):
+        delta = 100
         while not self.Stop and not (self.is_empty() and self.StopWhenEmpty):
+            try:    self.sleep_until(self._job_is_ready, timeout=delta)
+            except Timeout:
+                pass
             delta = 100
             if self.Timeline:
                 next_t = self.run_jobs()
                 if next_t is not None:
                     delta = next_t - time.time()
-            if delta > 0:
-                self.sleep(delta)
-                
 
     @synchronized        
     def wait_until_empty(self):

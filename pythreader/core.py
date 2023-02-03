@@ -134,7 +134,9 @@ class Primitive:
     @synchronized
     def sleep(self, timeout = None, function=None, arguments=()):
         """
-        Blocks until wakep() method is called on the same primitive.
+        Blocks until wakep() method is called on the same primitive. The primitive will be unlocked for the duration of the sleep() call.
+        Then the primitive will be locked again and if the function is provided, it will be called while the primitive is locked
+        and then the sleep() methot will unlock the primitive and return the result.
         
         Args:
             timeout (float or int): time-out. If timed-out, RuntimeError exception will be raised.
@@ -149,12 +151,14 @@ class Primitive:
         """
         Blocks until a condition is satisfied. The method will continue calling sleep() and when it wakes up, it will call the
         predicate function and check if the predicate is satisfied and if not go back to sleep. The predicate function is
-        expected to return True or False. Basically, sleep_until runs this loop:
+        expected to return True or False. Basically, sleep_until implements this loop inside a critical section.
+        Note that the primitive is unlocked while the sleep() is in progress.
         
-            while not timed-out:
-                primitive.sleep()
-                if predicate(*params, **args):
-                    break
+            with self:
+                while not timed-out:
+                    primitive.sleep()
+                    if predicate(*params, **args):
+                        break
 
         Args:
             predicate (function): a function returning True or False. The method will exit when the function returns True
