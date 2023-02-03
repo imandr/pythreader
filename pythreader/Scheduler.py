@@ -172,17 +172,17 @@ class Scheduler(PyThread):
         #       int or float - next time to run
         #       None - run at now+interval next time
         #
-        if t is None: t = t0            # alias, t0 is deprecated
+        if t is None: t = t0            # alias, t0 argument is deprecated
         if param is not None:       # for backward compatibility
             params = (param,)
         if id is None:
             id = uuid.uuid4().hex[:8]
-        if t0 is None:
-            t0 = time.time() + (interval or 0.0) + random.random()*jitter
-        elif t0 < 10*365*24*3600:           # ~ Jan 1 1980
-            t0 = time.time() + t0
-        job = Job(self, id, t0, interval, jitter, fcn, count, params, args)
-        return self.add_job(job, t0)
+        if t is None:
+            t = time.time() + (interval or 0.0) + random.random()*jitter
+        elif t < 10*365*24*3600:           # ~ Jan 1 1980
+            t = time.time() + t
+        job = Job(self, id, t, interval, jitter, fcn, count, params, args)
+        return self.add_job(job, t)
         
     @synchronized
     def remove(self, job_or_id):
@@ -230,16 +230,14 @@ class Scheduler(PyThread):
         return any(j.NextT <= time.time() for j in self.Timeline)
 
     def run(self):
-        delta = 100
         while not self.Stop and not (self.is_empty() and self.StopWhenEmpty):
-            try:    self.sleep_until(self._job_is_ready, timeout=delta)
-            except Timeout:
-                pass
-            delta = 100
-            if self.Timeline:
-                next_t = self.run_jobs()
-                if next_t is not None:
-                    delta = next_t - time.time()
+            with self:
+                delta = 100
+                if self.Timeline:
+                    next_t = self.run_jobs()
+                    if next_t is not None:
+                        delta = next_t - time.time()
+                self.sleep(delta)
 
     @synchronized        
     def wait_until_empty(self):
