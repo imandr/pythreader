@@ -240,17 +240,22 @@ class Scheduler(PyThread):
 _GLobalSchedulerLock = Primitive()
 _GlobalScheduler = None
 
-def init_global_scheduler(name="GlobalScheduler", **args):
+def global_scheduler(name="GlobalScheduler", **args):
     global _GlobalScheduler
     if _GlobalScheduler is None:
         with _GLobalSchedulerLock:
             if _GlobalScheduler is None:
                 _GlobalScheduler = Scheduler(name=name, **args)
+    return _GlobalScheduler
 
 def schedule_job(fcn, *params, **args):
-    global _GlobalScheduler
-    init_global_scheduler()         # init if needed
-    return _GlobalScheduler.add(fcn, *params, **args)
+    return global_scheduler().add(fcn, *params, **args)
+
+def unschedule_job(job_or_id):
+    return global_scheduler().remove(job_or_id)
+
+schedule_task = schedule_job        # aliases, deprecating term "job"
+unschedule_task = unschedule_job
 
 if __name__ == "__main__":
     from datetime import datetime
