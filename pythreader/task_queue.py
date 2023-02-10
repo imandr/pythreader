@@ -61,7 +61,7 @@ class Task(Primitive):
         return str(self)
         
     @property
-    def _promise(self):
+    def promise(self):
         return self._Private.Promise
         
     @synchronized
@@ -73,6 +73,7 @@ class Task(Primitive):
                 promise.cancel()
             self._Private.Promise = None
             
+    @property
     def is_cancelled(self):
         return self._Private.Cancelled
 
@@ -94,14 +95,14 @@ class Task(Primitive):
     @synchronized
     def is_running(self):
         return self._Private.Running
-
+        
     @synchronized
     def to_be_repeated(self):
         interval = self._Private.RepeatInterval
         count = self._Private.RunCount
         repeat = interval is not None and (count is None or count > 0) \
             or interval is None and count is not None and count > 0
-        return repeat
+        return repeat and self.should_repeat()
 
     @property
     @synchronized
@@ -128,6 +129,13 @@ class Task(Primitive):
         if not isinstance(queue, TaskQueue):
             raise TypeError(f"unsupported operand type(s) for >>: 'Task' and %s" % (type(queue),))
         return queue.insert(self)
+
+    # overridable
+    
+    def should_repeat(self):
+        return True
+
+
 
 class FunctionTask(Task):
 
@@ -325,7 +333,7 @@ class TaskQueue(Primitive):
         wakeup = False
         # remove cancelled
         for t in self.Queue.items():
-            if t.is_cancelled():
+            if t.is_cancelled:
                 self.Queue.remove(t)
                 wakeup = True
         again = True
