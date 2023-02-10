@@ -53,8 +53,12 @@ class Task(Primitive):
         self._Private.RepeatInterval = None
         self._Private.RunCount = 1
         self._Private.After = None
+        self._Private.Running = False               # True actually means that the Executor thread was created and about to be started
         self._Private.LastStart = None
         self._Private.Cancelled = False
+        
+    def __repr__(self):
+        return str(self)
         
     @property
     def _promise(self):
@@ -86,16 +90,24 @@ class Task(Primitive):
     def has_started(self):
         return self.Started is not None
         
-    @synchronized
     @property
+    @synchronized
     def is_running(self):
-        return self._Private.LastStart is not None and self._Private.LastEnd is None
-        
+        return self._Private.Running
+
     @synchronized
+    def to_be_repeated(self):
+        interval = self._Private.RepeatInterval
+        count = self._Private.RunCount
+        repeat = interval is not None and (count is None or count > 0) \
+            or interval is None and count is not None and count > 0
+        return repeat
+
     @property
+    @synchronized
     def has_ended(self):
-        return self.Started is not None and self.Ended is not None
-        
+        return self.Started and not self.is_running and not self.to_be_repeated()
+
     @synchronized
     def _started(self):
         t = time.time()
@@ -137,10 +149,12 @@ class TaskQueue(Primitive):
             PyThread.__init__(self, daemon=True)
             self.Queue = queue
             self.Task = task
+            task._Private.Running = True
             
         def run(self):
             task = self.Task
             task._started()             # this will decrement RunCount
+            repeat = False
             try:
                 if callable(task):
                     result = task()
@@ -148,14 +162,12 @@ class TaskQueue(Primitive):
                     result = task.run()
                 task._ended()
                 #print(task._Private.__dict__)
-                repeat = task._Private.RepeatInterval is not None and (task._Private.RunCount is None or task._Private.RunCount > 0) \
-                    or task._Private.RepeatInterval is None and task._Private.RunCount is not None and task._Private.RunCount > 0
-                repeat = repeat and self.Queue.taskWillRepeat(task, result, task._Private.After, task._Private.RunCount) is not False
+                repeat = task.to_be_repeated() \
+                    and self.Queue.taskWillRepeat(task, result, task._Private.After, task._Private.RunCount) is not False
                 #print("repeat:", repeat)
                 if repeat:
                     interval = task._Private.RepeatInterval or 0
                     task._Private.After = (task._Private.LastStart if task._Private.After is None else task._Private.After) + interval
-                    self.Queue.reinsert_task(task)
                 else:
                     promise = task._Private.Promise
                     if promise is not None:
@@ -171,7 +183,8 @@ class TaskQueue(Primitive):
                     promise.exception(exc_type, value, tb)
                 self.Queue.taskFailed(self.Task, exc_type, value, tb)
             finally:
-                self.Queue.threadEnded(self)
+                task._Private.Running = False
+                self.Queue.threadEnded(task, repeat)
                 self.Queue = None
 
     def __init__(self, nworkers=None, capacity=None, stagger=0.0, tasks = [], delegate=None, 
@@ -196,7 +209,6 @@ class TaskQueue(Primitive):
         """
         Primitive.__init__(self, name=name)
         self.NWorkers = nworkers
-        self.Threads = []
         self.Queue = DEQueue(capacity)
         self.Held = False
         self.Stagger = stagger
@@ -323,11 +335,12 @@ class TaskQueue(Primitive):
             if self.Stagger is not None and self.LastStart + self.Stagger > now:
                 self.alarm(self.start_tasks, t = self.LastStart + self.Stagger)
             elif self.Queue:
-                nrunning = len(self.Threads)
+                nrunning = self.nrunning()
                 if (self.NWorkers is None or nrunning < self.NWorkers):
                     next_task = None
                     sleep_until = None
-                    for t in self.Queue.items():
+                    waiting_tasks = self.waitingTasks()
+                    for t in self.waitingTasks():
                         after = t._Private.After
                         if after is None or after <= now:
                             next_task = t
@@ -335,11 +348,9 @@ class TaskQueue(Primitive):
                         else:
                             sleep_until = after if sleep_until is None else min(sleep_until, after)
                     if next_task is not None:
-                        self.Queue.remove(next_task)
                         do_wakeup = True
                         t = self.ExecutorThread(self, next_task)
                         t.kind = "%s.task" % (self.kind,)
-                        self.Threads.append(t)
                         self.LastStart = time.time()
                         self.call_delegate("taskIsStarting", self, next_task, t)
                         t.start()
@@ -349,14 +360,13 @@ class TaskQueue(Primitive):
                         self.alarm(self.start_tasks, t=sleep_until)
         if wakeup:
             self.wakeup()
+        
 
-    @synchronized
-    def threadEnded(self, t):
-        #print("queue.threadEnded: ", t)
-        if t in self.Threads:
-            self.Threads.remove(t)
+    def threadEnded(self, task, repeat):
+        if not repeat:
+            self.Queue.remove(task)
+            self.wakeup()
         self.start_tasks()
-        self.wakeup()
         
     def call_delegate(self, cb, *params):
         if self.Delegate is not None and hasattr(self.Delegate, cb):
@@ -374,13 +384,12 @@ class TaskQueue(Primitive):
     def taskFailed(self, task, exc_type, exc_value, tb):
         return self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
             
-    @synchronized
     def waitingTasks(self):
         """
         Returns:
             list: the list of tasks waiting in the queue
         """
-        return list(self.Queue.items())
+        return [t for t in self.Queue.items() if not t.is_running]
         
     @synchronized
     def activeTasks(self):
@@ -388,7 +397,7 @@ class TaskQueue(Primitive):
         Returns:
             list: the list of running tasks
         """
-        return [t.Task for t in self.Threads]
+        return [t for t in self.Queue.items() if t.is_running]
         
     @synchronized
     def tasks(self):
@@ -396,31 +405,33 @@ class TaskQueue(Primitive):
         Returns:
             tuple: (self.waitingTasks(), self.activeTasks())
         """
-        return self.waitingTasks(), self.activeTasks()
+        tasks = self.Queue.items()
+        return [t for t in tasks if not t.is_running], [t for t in tasks if t.is_running]
         
-    @synchronized
     def nrunning(self):
         """
         Returns:
             int: number of runnign tasks
         """
-        return len(self.Threads)
+        return sum(t.is_running for t in self.Queue.items())
         
-    @synchronized
     def nwaiting(self):
         """
         Returns:
             int: number of waiting tasks
         """
-        return len(self.Queue)
+        return sum(not t.is_running for t in self.Queue.items())
         
-    @synchronized
     def counts(self):
         """
         Returns:
             tuple: (self.nwaiting(), self.nrunning())
         """
-        return self.nwaiting(), self.nrunning()
+        nrunning, nwaiting = 0, 0
+        for t in self.Queue.items():
+            if t.is_running:    nrunning += 1
+            else:               nwaiting += 1
+        return nwaiting, nrunning
         
     def hold(self):
         """
@@ -441,7 +452,7 @@ class TaskQueue(Primitive):
         Returns:
             bollean: True if no tasks are running and no tasks are waiting
         """
-        return len(self.Queue) == 0 and len(self.Threads) == 0
+        return len(self.Queue) == 0
         
     isEmpty = is_empty
     
