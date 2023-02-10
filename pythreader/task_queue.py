@@ -21,13 +21,25 @@ class TaskQueueDelegate(object):
     def taskFailed(self, queue, task, exc_type, exc_value, tback):
         pass
         
-class _TaskPrivate(object):
-    pass
-
-class Task(Primitive):
+def _after_time(after):
+    if after is None:   return None
+    if isinstance(after, timedelta):
+        after = time.time() + after.totalseconds()
+    elif isinstance(after, datetime):
+        after = after.timestamp()
+    if after < 10*365*24*3600:  # 1980
+        after = time.time() + after
+    return after
     
-    Resubmit = False
-    ResubmitInterval = None
+def _time_interval(interval):
+    if isinstance(interval, timedelta):
+        interval = interval.totalseconds()
+    return interval
+        
+class Task(Primitive):
+
+    class _TaskPrivate(object):
+        pass
 
     def __init__(self, name=None):
         Primitive.__init__(self, name=name)
@@ -35,17 +47,37 @@ class Task(Primitive):
         self.Queued = None
         self.Started = None
         self.Ended = None
-        # used by the TaskQueue
-        self._Private = _TaskPrivate()
-        self._Private.After = None
+        # Use _Private member to avoid name clashes with a subclass
+        self._Private = self._TaskPrivate()
         self._Private.Promise = None
+        self._Private.RepeatInterval = None
+        self._Private.RunCount = 1
+        self._Private.After = None
+        self._Private.LastStart = None
+        self._Private.Cancelled = False
         
     @property
     def _promise(self):
         return self._Private.Promise
-    
-    #def __call__(self):
-    #    pass
+        
+    @synchronized
+    def cancel(self):
+        if not self._Private.Cancelled:
+            self._Private.Cancelled = True
+            promise = self._Private.Promise
+            if promise is not None:
+                promise.cancel()
+            self._Private.Promise = None
+            
+    def is_cancelled(self):
+        return self._Private.Cancelled
+
+    @synchronized
+    def repeat(self, after=None, count=1, interval=0):
+        if not self._Private.Cancelled:
+            self._Private.RunCount = count
+            self._Private.RepeatInterval = _time_interval(interval)
+            self._Private.After = _after_time(after)
 
     def run(self):
         raise NotImplementedError
@@ -57,18 +89,25 @@ class Task(Primitive):
     @synchronized
     @property
     def is_running(self):
-        return self.Started is not None and self.Ended is None
+        return self._Private.LastStart is not None and self._Private.LastEnd is None
         
     @synchronized
     @property
     def has_ended(self):
         return self.Started is not None and self.Ended is not None
         
+    @synchronized
     def _started(self):
-        self.Started = time.time()
-        
+        t = time.time()
+        if self.Started is None:    self.Started = t
+        if self._Private.RunCount is not None:
+            self._Private.RunCount -= 1
+        self._Private.LastStart = t
+        self._Private.LastEnd = None
+
+    @synchronized
     def _ended(self):
-        self.Ended = time.time()
+        self._Private.LastEnd = self.Ended = time.time()
         
     def _queued(self):
         self.Queued = time.time()
@@ -88,7 +127,7 @@ class FunctionTask(Task):
         
     def run(self):
         result = self.F(*self.Params, **self.Args)
-        self.F = self.Params = self.Args = None
+        #self.F = self.Params = self.Args = None
         return result
         
 class TaskQueue(Primitive):
@@ -101,19 +140,31 @@ class TaskQueue(Primitive):
             
         def run(self):
             task = self.Task
-            task._started()
+            task._started()             # this will decrement RunCount
             try:
                 if callable(task):
                     result = task()
                 else:
                     result = task.run()
                 task._ended()
-                promise = task._Private.Promise
-                if promise is not None:
-                    promise.complete(result)
-                self.Queue.taskEnded(self.Task, result)
+                #print(task._Private.__dict__)
+                repeat = task._Private.RepeatInterval is not None and (task._Private.RunCount is None or task._Private.RunCount > 0) \
+                    or task._Private.RepeatInterval is None and task._Private.RunCount is not None and task._Private.RunCount > 0
+                repeat = repeat and self.Queue.taskWillRepeat(task, result, task._Private.After, task._Private.RunCount) is not False
+                #print("repeat:", repeat)
+                if repeat:
+                    interval = task._Private.RepeatInterval or 0
+                    task._Private.After = (task._Private.LastStart if task._Private.After is None else task._Private.After) + interval
+                    self.Queue.reinsert_task(task)
+                else:
+                    promise = task._Private.Promise
+                    if promise is not None:
+                        promise.complete(result)
+                        task._Private.Promise = None
+                    self.Queue.taskEnded(task, result)
             except:
                 exc_type, value, tb = sys.exc_info()
+                traceback.print_exc()
                 task._ended()
                 promise = task._Private.Promise
                 if promise is not None:
@@ -122,7 +173,6 @@ class TaskQueue(Primitive):
             finally:
                 self.Queue.threadEnded(self)
                 self.Queue = None
-                task._Private.Promise = None
 
     def __init__(self, nworkers=None, capacity=None, stagger=0.0, tasks = [], delegate=None, 
                         name=None):
@@ -164,19 +214,25 @@ class TaskQueue(Primitive):
         self.cancel_alarm()
         
     def __add(self, mode, task, *params,
-            timeout=None, promise_data=None, after=None, force=False, **args):
+            timeout=None, promise_data=None, force=False,
+            count = None, interval = None, after=None,
+            **args):
+
+        if interval is None and count is None:
+            count = 1
+        
         if not isinstance(task, Task):
             if callable(task):
                 task = FunctionTask(task, *params, **args)
             else:
                 raise ArgumentError("The task argument must be either a callable or a Task subclass instance")
-        timeout = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
-        if isinstance(after, timedelta):
-            after = after.totalseconds()
-        if after is not None and after < 10*365*24*3600:            # ~ Jan 1 1980
-            after = time.time() + after
-        task._Private.After = after.timestamp() if isinstance(after, datetime) else after
+
         task._Private.Promise = promise = Promise(data=promise_data)
+
+        task._Private.RunCount = count
+        task._Private.RepeatInterval = _time_interval(interval)
+        task._Private.After = _after_time(after)
+
         with self:
             if mode == "insert":
                 self.Queue.insert(task, timeout = timeout, force=force)
@@ -185,6 +241,9 @@ class TaskQueue(Primitive):
         task._queued()
         self.start_tasks()
         return promise
+
+    def reinsert_task(self, task):
+        self.Queue.insert(task, force=True)
 
     def append(self, task, *params, timeout=None, promise_data=None, after=None, force=False, **args):
         """Appends the task to the end of the queue. If the queue is at or above its capacity, the method will block.
@@ -251,6 +310,12 @@ class TaskQueue(Primitive):
 
     @synchronized
     def start_tasks(self):
+        wakeup = False
+        # remove cancelled
+        for t in self.Queue.items():
+            if t.is_cancelled():
+                self.Queue.remove(t)
+                wakeup = True
         again = True
         while not self.Held and not self.Stop and again:
             again = False
@@ -271,26 +336,25 @@ class TaskQueue(Primitive):
                             sleep_until = after if sleep_until is None else min(sleep_until, after)
                     if next_task is not None:
                         self.Queue.remove(next_task)
+                        do_wakeup = True
                         t = self.ExecutorThread(self, next_task)
                         t.kind = "%s.task" % (self.kind,)
                         self.Threads.append(t)
-                        self.call_delegate("taskIsStarting", self, next_task)
                         self.LastStart = time.time()
+                        self.call_delegate("taskIsStarting", self, next_task, t)
                         t.start()
-                        self.call_delegate("taskStarted", self, next_task)
+                        self.call_delegate("taskStarted", self, next_task, t)
                         again = True
                     elif sleep_until is not None:
                         self.alarm(self.start_tasks, t=sleep_until)
+        if wakeup:
+            self.wakeup()
 
     @synchronized
     def threadEnded(self, t):
         #print("queue.threadEnded: ", t)
         if t in self.Threads:
             self.Threads.remove(t)
-        task = t.Task
-        if task.Resubmit:
-            after = None if task.ResubmitInterval is None else task.Queued + task.ResubmitInterval
-            self.add(task, after=after, force=True)
         self.start_tasks()
         self.wakeup()
         
@@ -303,6 +367,9 @@ class TaskQueue(Primitive):
             
     def taskEnded(self, task, result):
         return self.call_delegate("taskEnded", self, task, result)
+        
+    def taskWillRepeat(self, task, result, next_t, count):
+        return self.call_delegate("taskWillRepeat", self, task, result, next_t, count)
         
     def taskFailed(self, task, exc_type, exc_value, tb):
         return self.call_delegate("taskFailed", self, task,  exc_type, exc_value, tb)
@@ -331,6 +398,7 @@ class TaskQueue(Primitive):
         """
         return self.waitingTasks(), self.activeTasks()
         
+    @synchronized
     def nrunning(self):
         """
         Returns:
@@ -338,6 +406,7 @@ class TaskQueue(Primitive):
         """
         return len(self.Threads)
         
+    @synchronized
     def nwaiting(self):
         """
         Returns:
@@ -353,14 +422,12 @@ class TaskQueue(Primitive):
         """
         return self.nwaiting(), self.nrunning()
         
-    @synchronized
     def hold(self):
         """
         Holds the queue, preventing new tasks from being started
         """
         self.Held = True
         
-    @synchronized
     def release(self):
         """
         Releses the queue, allowing new tasks to start
@@ -437,3 +504,16 @@ class TaskQueue(Primitive):
         Returns true if the task is in the queue and is waiting.
         """
         return item in self.Queue
+
+
+class _Delegate(object):
+    
+    def task_failed(self, queue, task, exc_type, exc_value, tb):
+        traceback.print_exception(exc_type, exc_value, tb, file=sys.stderr)
+
+_GlobalTaskQueue = TaskQueue(delegate = _Delegate())
+
+del _Delegate
+
+def schedule_task(fcn, *params, **args):
+    return _GlobalTaskQueue.append(fcn, *params, **args)
