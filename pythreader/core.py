@@ -204,8 +204,7 @@ class Primitive:
             params: positional arguments to pass to the Timer constructor
             args: keyword arguments to pass to the Timer constructor
         """
-        if self.Timer is not None:
-            self.Timer.cancel()
+        self.cancel_alarm()
         self.Timer = Timer(*params, **args)
 
     @synchronized
@@ -304,7 +303,6 @@ class Timer(PyThread):
         """Pauses the Timer thread. In fact the thread will continue running, but it will not fire intil ``resume`` method is called
         """
         self.Paused = True
-        self.wakeup()
 
     def resume(self):
         """Resumes the timer firing. Next time the timer will not necessarily fire immediately when resumed, but it will fire at the next

@@ -262,7 +262,8 @@ class TaskQueue(Primitive):
             self.addTask(t)
         
     def stop(self):
-        """Stops the queue thread"""
+        """Stops the queue. Any attempt to add any new tasks will cause an exception. All running
+        tasks will continue running, but new tasks will not start."""
         self.Stop = True
         self.Queue.close()
         self.cancel_alarm()
@@ -287,11 +288,10 @@ class TaskQueue(Primitive):
         task._Private.RepeatInterval = _time_interval(interval)
         task._Private.After = _after_time(after)
 
-        with self:
-            if mode == "insert":
-                self.Queue.insert(task, timeout = timeout, force=force)
-            else:           # mode == "append"
-                self.Queue.append(task, timeout = timeout, force=force)
+        if mode == "insert":
+            self.Queue.insert(task, timeout = timeout, force=force)
+        else:           # mode == "append"
+            self.Queue.append(task, timeout = timeout, force=force)
         task._queued()
         self.start_tasks()
         return task
@@ -371,12 +371,13 @@ class TaskQueue(Primitive):
 
     @synchronized
     def start_tasks(self):
-        # remove cancelled
+        self.cancel_alarm()
+        # remove cancelled tasks
         for t in self.Queue.items():
             if t.is_cancelled:
                 self.Queue.remove(t)
         again = True
-        while not self.Held and not self.Stop and again:
+        while not (self.Stop or self.Held) and again:
             again = False
             now = time.time()
             if self.Stagger is not None and self.LastStart + self.Stagger > now:
@@ -409,7 +410,7 @@ class TaskQueue(Primitive):
         if not repeat:
             try:    self.Queue.remove(task)
             except ValueError:  pass
-            # self.wakeup()
+            self.wakeup()               # in case someone is waiting for the queue to be drained
         self.start_tasks()
         
     def call_delegate(self, cb, *params):
@@ -435,7 +436,6 @@ class TaskQueue(Primitive):
         """
         return [t for t in self.Queue.items() if not t.is_running]
         
-    @synchronized
     def activeTasks(self):
         """
         Returns:
@@ -476,7 +476,7 @@ class TaskQueue(Primitive):
             if t.is_running:    nrunning += 1
             else:               nwaiting += 1
         return nwaiting, nrunning
-        
+    
     def hold(self):
         """
         Holds the queue, preventing new tasks from being started
@@ -503,11 +503,11 @@ class TaskQueue(Primitive):
     @synchronized
     def waitUntilEmpty(self):
         """
-        Blocks until the queue is empty (no tasks are running and no tasks are waiting)
+        Blocks until the queue is empty (no tasks are running or waiting)
         """
         # wait until all tasks are done and the queue is empty
         if not self.isEmpty():
-            while not self.sleep(function=self.isEmpty):
+            while not self.sleep(function=self.is_empty):
                 pass
                 
     join = waitUntilEmpty
