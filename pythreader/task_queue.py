@@ -56,25 +56,47 @@ class Task(Primitive):
         self._Private.Running = False               # True actually means that the Executor thread was created and about to be started
         self._Private.LastStart = None
         self._Private.Cancelled = False
-        
+
     def __repr__(self):
         return str(self)
-        
+
     @property
     def promise(self):
+        """
+        Returns:
+            Promise: the Promise associated with the Task
+        """
         return self._Private.Promise
         
     @synchronized
+    def deliver_promise(self, result=None):
+        promise = self._Private.Promise
+        if promise is not None:
+            if self.is_cancelled:
+                promise.cancel()
+            else:
+                promise.complete(result)
+            self._Private.Promise = None
+
+    @synchronized
     def cancel(self):
+        """
+        Cancels the task. If the task is alreadt running, it will not be interrupted. Otherwise, it will be removed from any
+        TaskQueue the task was added to. The task promise will be cancelled.
+        """
         if not self._Private.Cancelled:
             self._Private.Cancelled = True
-            promise = self._Private.Promise
+            promise = self.promise
             if promise is not None:
                 promise.cancel()
-            self._Private.Promise = None
-            
+                self._Private.Promise = None
+
     @property
     def is_cancelled(self):
+        """
+        Returns:
+            boolean: whether the task is cancelled
+        """
         return self._Private.Cancelled
 
     @synchronized
@@ -86,16 +108,26 @@ class Task(Primitive):
 
     def run(self):
         raise NotImplementedError
-        
+
     @property
     def has_started(self):
+        """
+        Returns:
+            boolean: whether the task has started. For repeating tasks, the value indicates that the task was started at least once,
+            so once the task starts first time, this propery will remain true even if the task is not running at the moment.
+        """
         return self.Started is not None
-        
+
     @property
-    @synchronized
     def is_running(self):
+        """
+        Returns:
+            boolean: whether the task is currently running. This is not exactly the same as the ``running`` status of the corresponding
+            thread, but very close. Strictly speaking, True value indicates that the task thread was created and is actually
+            running or about to start.
+        """
         return self._Private.Running
-        
+
     @synchronized
     def to_be_repeated(self):
         interval = self._Private.RepeatInterval
@@ -107,6 +139,10 @@ class Task(Primitive):
     @property
     @synchronized
     def has_ended(self):
+        """
+        Returns:
+            boolean: whether the task has ended and will not re-start again.
+        """
         return self.Started and not self.is_running and not self.to_be_repeated()
 
     @synchronized
@@ -121,7 +157,7 @@ class Task(Primitive):
     @synchronized
     def _ended(self):
         self._Private.LastEnd = self.Ended = time.time()
-        
+
     def _queued(self):
         self.Queued = time.time()
 
@@ -133,9 +169,14 @@ class Task(Primitive):
     # overridable
     
     def should_repeat(self):
+        """Overridable method. For repeating tasks, the Task Queue will call this method right after the task finishes
+        and it is repeatable. 
+        If the method returns False, the task fill not be repeated even if its run count is still greater than 0.
+
+        Returns:
+            boolean: whether the task should be repeated
+        """
         return True
-
-
 
 class FunctionTask(Task):
 
@@ -177,16 +218,13 @@ class TaskQueue(Primitive):
                     interval = task._Private.RepeatInterval or 0
                     task._Private.After = (task._Private.LastStart if task._Private.After is None else task._Private.After) + interval
                 else:
-                    promise = task._Private.Promise
-                    if promise is not None:
-                        promise.complete(result)
-                        task._Private.Promise = None
+                    task.deliver_promise(result)
                     self.Queue.taskEnded(task, result)
             except:
                 exc_type, value, tb = sys.exc_info()
                 traceback.print_exc()
                 task._ended()
-                promise = task._Private.Promise
+                promise = task.promise
                 if promise is not None:
                     promise.exception(exc_type, value, tb)
                 self.Queue.taskFailed(self.Task, exc_type, value, tb)
@@ -208,12 +246,8 @@ class TaskQueue(Primitive):
             stagger (int or float): time interval in seconds between consecutive task starts. Default=0, no staggering.
             tasks (list of Task objects): initial task list to be added to the queue
             delegate (object): an object to receive callbacks with task status updates. If None, updates will not be sent.
-            name (string): PyThreader object name
+            name (string): primitive name
             daemon (boolean): Threading daemon flag for the queue internal thread. Default = True
-
-            common_attributes (dict): attributes to attach to each file, will be overridden by the individual file attribute values with the same key
-            project_attributes (dict): attriutes to attach to the new project
-            query (str): query used to create the file list, optional. If specified, the query string will be added to the project as the attribute.
         """
         Primitive.__init__(self, name=name)
         self.NWorkers = nworkers
@@ -260,12 +294,13 @@ class TaskQueue(Primitive):
                 self.Queue.append(task, timeout = timeout, force=force)
         task._queued()
         self.start_tasks()
-        return promise
+        return task
 
     def reinsert_task(self, task):
         self.Queue.insert(task, force=True)
 
-    def append(self, task, *params, timeout=None, promise_data=None, after=None, force=False, **args):
+    def append(self, task, *params, timeout=None, promise_data=None, after=None, force=False, 
+                count=None, interval=None, **args):
         """Appends the task to the end of the queue. If the queue is at or above its capacity, the method will block.
         
         Args:
@@ -278,9 +313,12 @@ class TaskQueue(Primitive):
                 If ``after`` is numeric and < 365 days or it is a datetime.timedelta object, it is interpreted as time relative to the current time.
                 Default: start as soon as possible
             force (boolean): ignore the queue capacity and append the task immediately. Default: False
+            interval (numeric or datetime.timedelta): interval at which to repeat the task. Default: None
+            count (int): how many times to repeat the task. Default None.
         
         Returns:
-            Promise: promise object associated with the task. The Promise will be delivered when the task ends.
+            Task: the task added to the queue. If the first argument was a callable, then the method will return a Task
+                created for the callable and return it.
 
         Raises:
             RuntimeError: the queue is closed or the timeout expired
@@ -293,13 +331,13 @@ class TaskQueue(Primitive):
     def __iadd__(self, task):
         return self.addTask(task)
 
-    def insert(self, task, *params, timeout = None, promise_data=None, after=None, force=False, **args):
+    def insert(self, task, *params, timeout = None, promise_data=None, after=None, force=False, count=None, interval=None, **args):
         """Inserts the task at the beginning of the queue. If the queue is at or above its capacity, the method will block.
            A Task can be also inserted into the queue using the '>>' operator. In this case, '>>' operator returns
            the promise object associated with the task: ``promise = task >> queue``.
         
         Args:
-            task (Task): A Task subclass instance to be added to the queue
+            task (Task): A Task subclass instance to be added to the queue or a callable
 
         Keyword Arguments:
             timeout (int or float or timedelta): time to block if the queue is at or above the capacity. Default: block indefinitely.
@@ -308,9 +346,12 @@ class TaskQueue(Primitive):
                 If ``after`` is numeric and < 365 days or it is a datetime.timedelta object, it is interpreted as time relative to the current time.
                 Default: start as soon as possible
             force (boolean): ignore the queue capacity and append the task immediately. Default: False
+            interval (numeric or datetime.timedelta): interval at which to repeat the task. Default: None
+            count (int): how many times to repeat the task. Default None.
         
         Returns:
-            Promise: promise object associated with the task. The Promise will be delivered when the task ends.
+            Task: the task added to the queue. If the first argument was a callable, then the method will return a Task
+                created for the callable and return it.
         
         Raises:
             RuntimeError: the queue is closed or the timeout expired
@@ -330,12 +371,10 @@ class TaskQueue(Primitive):
 
     @synchronized
     def start_tasks(self):
-        wakeup = False
         # remove cancelled
         for t in self.Queue.items():
             if t.is_cancelled:
                 self.Queue.remove(t)
-                wakeup = True
         again = True
         while not self.Held and not self.Stop and again:
             again = False
@@ -356,7 +395,6 @@ class TaskQueue(Primitive):
                         else:
                             sleep_until = after if sleep_until is None else min(sleep_until, after)
                     if next_task is not None:
-                        do_wakeup = True
                         t = self.ExecutorThread(self, next_task)
                         t.kind = "%s.task" % (self.kind,)
                         self.LastStart = time.time()
@@ -366,14 +404,12 @@ class TaskQueue(Primitive):
                         again = True
                     elif sleep_until is not None:
                         self.alarm(self.start_tasks, t=sleep_until)
-        if wakeup:
-            self.wakeup()
-        
 
     def threadEnded(self, task, repeat):
         if not repeat:
-            self.Queue.remove(task)
-            self.wakeup()
+            try:    self.Queue.remove(task)
+            except ValueError:  pass
+            # self.wakeup()
         self.start_tasks()
         
     def call_delegate(self, cb, *params):
@@ -486,43 +522,44 @@ class TaskQueue(Primitive):
     @synchronized
     def flush(self):
         """
-        Discards all waiting tasks
+        Discards all tasks. Running tasks will not be interrupted.
         """
         self.Queue.flush()
 
     @synchronized
     def cancel(self, task):
         """
-        Cancel a queued task. Can be used only of the task was added as a Task object. The Promise associated with the Task will be
-        fulfilled with None as the result. If the queue has a delegate, the taskCancelled delegate's method will be called.
-        If the task was already runnig or was not found in the queue, ValueError exception will be raised.
+        Cancel a queued task and remove it from the queue. The Promise associated with the Task will be cancelled.
+        If the queue has a delegate, the taskCancelled delegate's method will be called.
+        If the task is already running, it will not be interrupted.
+        If the task is not found in the queue, ValueError exception will be raised.
 
         Args:
-            task (Task): A Task subclass instance
+            task (Task): A Task subclass instance returned by the TaskQueue.append() or similar method
         
         Returns:
             Task: cancelled task
         """
 
+        task.cancel()
         try:    self.Queue.remove(task)
         except ValueError:
             raise ValueError("Task not in the queue")
-        task._Private.Promise.complete()
         self.call_delegate("taskCancelled", self, task)
         self.start_tasks()
         return task
 
     def __len__(self):
         """
-        Equivalent to TaskQueue.nwaiting()
+        Returns total number of tasks in the queue, running and pending.
         """
         return len(self.Queue)
 
-    def __contains__(self, item):
+    def __contains__(self, task):
         """
-        Returns true if the task is in the queue and is waiting.
+        Returns true if the task is in the queue, running or waiting.
         """
-        return item in self.Queue
+        return task in self.Queue
 
 
 class _Delegate(object):
