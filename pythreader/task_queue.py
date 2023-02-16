@@ -323,8 +323,8 @@ class TaskQueue(Primitive):
         Raises:
             RuntimeError: the queue is closed or the timeout expired
         """
-        return self.__add("append", task, *params, 
-                after=after, timeout=timeout, promise_data=promise_data, force=force, **args)
+        return self.__add("insert", task, *params, 
+                after=after, timeout=timeout, promise_data=promise_data, force=force, count=count, interval=interval, **args)
         
     add = addTask = append
         
@@ -357,7 +357,7 @@ class TaskQueue(Primitive):
             RuntimeError: the queue is closed or the timeout expired
         """
         return self.__add("insert", task, *params, 
-                after=after, timeout=timeout, promise_data=promise_data, force=force, **args)
+                after=after, timeout=timeout, promise_data=promise_data, force=force, count=count, interval=interval, **args)
         
     insertTask = insert
 
