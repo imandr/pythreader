@@ -6,6 +6,8 @@ LIB_DIR = $(BUILD_DIR)/pythreader
 
 build: $(LIB_DIR)
 	cp $(FILES) $(LIB_DIR)
+	mkdir -p $(LIB_DIR)/tools
+	cp tools/*.py $(LIB_DIR)/tools
     
 $(LIB_DIR):
 	mkdir -p $@

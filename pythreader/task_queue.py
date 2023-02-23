@@ -89,7 +89,6 @@ class Task(Primitive):
             promise = self.promise
             if promise is not None:
                 promise.cancel()
-                self._Private.Promise = None
 
     @property
     def is_cancelled(self):
