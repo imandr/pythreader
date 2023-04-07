@@ -1,7 +1,7 @@
 from .core import PyThread, synchronized, Primitive
 from .promise import Promise
 from threading import Timer
-import subprocess, os
+import subprocess, os, signal
 
 def to_str(b):
     if isinstance(b, bytes):
@@ -145,7 +145,7 @@ class SubprocessAsync(Primitive):
     @synchronized
     def killpg(self):
         if self.Popen is not None:
-            self.Popen.kill()
+            os.killpg(self.pid, signal.SIGKILL)
     
     @synchronized
     def terminate(self):
