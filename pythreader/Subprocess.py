@@ -145,7 +145,7 @@ class SubprocessAsync(Primitive):
     @synchronized
     def killpg(self):
         if self.Popen is not None:
-            os.killpg(self.Popen.pid, signal.SIGKILL)
+            self.Popen.kill()
     
     @synchronized
     def terminate(self):
