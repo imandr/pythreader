@@ -116,26 +116,41 @@ class SubprocessAsync(Primitive):
         # alias for wait(0)
         return self.wait(0)
 
+    @synchronized
     @property
     def pid(self):
-        return self.Popen.pid
+        if self.Popen is not None:
+            return self.Popen.pid
+        else:
+            return None
 
+    @synchronized
     @property
     def returncode(self):
-        return self.Popen.returncode
+        if self.Popen is not None:
+            return self.Popen.returncode
+        else:
+            return None
         
+    @synchronized
     @property
     def is_running(self):
         return self.Popen is not None and self.Popen.returncode is None
         
+    @synchronized
     def kill(self):
-        return self.Popen.kill()
+        if self.Popen is not None:
+            return self.Popen.kill()
     
+    @synchronized
     def terminate(self):
-        return self.Popen.terminate()
+        if self.Popen is not None:
+            return self.Popen.terminate()
     
+    @synchronized
     def signal(self, n):
-        return self.Popen.signal(n)
+        if self.Popen is not None:
+            return self.Popen.signal(n)
 
 class ShellCommand(Subprocess):
 
