@@ -1,12 +1,16 @@
-from .core import PyThread, synchronized
+from .core import PyThread, synchronized, Primitive
 from .promise import Promise
 from threading import Timer
 import subprocess
 
 def to_str(b):
-    if isinstance(b, str):
+    if isinstance(b, bytes):
+        return b.decode("utf-8")
+    else:
         return b
-    elif isinstance(b, bytes):
+
+def to_bytes(b):
+    if isinstance(b, str):
         return b.decode("utf-8")
     else:
         return b
@@ -77,6 +81,62 @@ class Subprocess(PyThread):
             self.Subprocess.terminate()
             self.Killed = True
         
+class SubprocessAsync(Primitive):
+    
+    def __init__(self, *command, name=None, **kv):
+        Primitive.__init__(self, name=name)    # timeout will be passed to the run()
+        self.Command = command
+        self.KV = kv
+        self.Popen = None
+
+    @synchronized
+    def start(self, input=None):
+        if self.Popen is not None:
+            raise RuntimeError("Already started")
+        self.Popen = subprocess.Popen(self.Command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE, **self.KV)
+        if input:
+            self.send(input)
+        return self
+
+    @synchronized
+    def send(self, data):
+        self.Popen.stdin.write(to_bytes(data))
+
+    @synchronized
+    def wait(self, timeout=None):
+        stdout, stderr = "", ""
+        try:
+            stdout, stderr = self.Popen.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            pass
+        return to_str(stdout), to_str(stderr)
+        
+    @synchronized
+    def poll(self):
+        # alias for wait(0)
+        return self.wait(0)
+
+    @property
+    def pid(self):
+        return self.Popen.pid
+
+    @property
+    def returncode(self):
+        return self.Popen.returncode
+        
+    @property
+    def is_running(self):
+        return self.Popen is not None and self.Popen.returncode is None
+        
+    def kill(self):
+        return self.Popen.kill()
+    
+    def terminate(self):
+        return self.Popen.terminate()
+    
+    def signal(self, n):
+        return self.Popen.signal(n)
+
 class ShellCommand(Subprocess):
 
     def __init__(self, command, tag=None, cwd=None, env=None, input=None, daemon=None, timeout=None):
