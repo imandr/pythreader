@@ -94,7 +94,7 @@ class SubprocessAsync(Primitive):
         if self.Popen is not None:
             raise RuntimeError("Already started")
         self.Popen = subprocess.Popen(self.Command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-            process_group = 0, **self.KV)
+            **self.KV)
         if input:
             self.send(input)
         return self
