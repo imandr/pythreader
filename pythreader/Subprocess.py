@@ -149,7 +149,7 @@ class SubprocessAsync(Primitive):
     @synchronized
     def signal(self, n):
         if self.Popen is not None:
-            return self.Popen.signal(n)
+            return self.Popen.send_signal(n)
 
 class ShellCommand(Subprocess):
 
