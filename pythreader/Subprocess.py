@@ -115,24 +115,24 @@ class SubprocessAsync(Primitive):
         # alias for wait(0)
         return self.wait(0)
 
-    @synchronized
     @property
+    @synchronized
     def pid(self):
         if self.Popen is not None:
             return self.Popen.pid
         else:
             return None
 
-    @synchronized
     @property
+    @synchronized
     def returncode(self):
         if self.Popen is not None:
             return self.Popen.returncode
         else:
             return None
         
-    @synchronized
     @property
+    @synchronized
     def is_running(self):
         return self.Popen is not None and self.Popen.returncode is None
         
