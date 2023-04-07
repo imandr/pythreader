@@ -102,7 +102,6 @@ class SubprocessAsync(Primitive):
     def send(self, data):
         self.Popen.stdin.write(to_bytes(data))
 
-    @synchronized
     def wait(self, timeout=None):
         stdout, stderr = "", ""
         try:
