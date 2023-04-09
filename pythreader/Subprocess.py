@@ -83,17 +83,19 @@ class Subprocess(PyThread):
         
 class SubprocessAsync(Primitive):
     
-    def __init__(self, *command, name=None, **kv):
+    def __init__(self, *command, name=None, stdin=None, **kv):
         Primitive.__init__(self, name=name)    # timeout will be passed to the run()
         self.Command = command
         self.KV = kv
         self.Popen = None
+        self.Stdin = stdin
 
     @synchronized
     def start(self, input=None):
         if self.Popen is not None:
             raise RuntimeError("Already started")
-        self.Popen = subprocess.Popen(self.Command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
+        stdin = self.Stdin if self.Stdin is not None else subprocess.PIPE
+        self.Popen = subprocess.Popen(self.Command, stdin=stdin, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
             **self.KV)
         if input:
             self.send(input)
