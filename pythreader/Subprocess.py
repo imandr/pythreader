@@ -88,7 +88,7 @@ class SubprocessAsync(Primitive):
         self.Command = command
         self.KV = kv
         self.Popen = None
-        self.Stdin = stdin
+        self.Stdin = subprocess.DEVNULL if stdin == os.devnull else stdin
 
     @synchronized
     def start(self, input=None):
