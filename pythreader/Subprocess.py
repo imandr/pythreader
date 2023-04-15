@@ -1,7 +1,8 @@
 from .core import PyThread, synchronized, Primitive
 from .promise import Promise
 from threading import Timer
-import subprocess, os, signal
+import sys, os, signal, subprocess
+from subprocess import Popen
 
 def to_str(b):
     if isinstance(b, bytes):
@@ -36,7 +37,7 @@ class Subprocess(PyThread):
         kv["stderr"] = subprocess.PIPE
         kv["stdout"] = subprocess.PIPE
         
-        self.Subprocess = subprocess.Popen(*self.Params, **kv)
+        self.Subprocess = Popen(*self.Params, **kv)
         if self.Input is not None:
             self.Subprocess.stdin.write(self.Input)
 
@@ -95,7 +96,7 @@ class SubprocessAsync(Primitive):
         if self.Popen is not None:
             raise RuntimeError("Already started")
         stdin = self.Stdin if self.Stdin is not None else subprocess.PIPE
-        self.Popen = subprocess.Popen(self.Command, stdin=stdin, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
+        self.Popen = Popen(self.Command, stdin=stdin, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
             **self.KV)
         if input:
             self.send(input)
@@ -147,7 +148,8 @@ class SubprocessAsync(Primitive):
     @synchronized
     def killpg(self):
         if self.Popen is not None:
-            os.killpg(self.pid, signal.SIGKILL)
+            #print("killpg: pid:", self.Popen.pid, " mypid:", os.getpid())
+            os.killpg(self.Popen.pid, signal.SIGKILL)
     
     @synchronized
     def terminate(self):
