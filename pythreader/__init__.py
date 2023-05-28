@@ -12,6 +12,7 @@ from .gate import Gate
 from .LogFile import LogFile, LogStream
 from .producer import Producer
 from .escrow import Escrow
+from .gang import Gang
 
 __version__ = Version
 version_info = (tuple(int(x) for x in Version.split(".")) + (0,0,0))[:3]            # pad with 0s
@@ -32,5 +33,5 @@ __a_ll__ = [
     'Promise',
     'Scheduler',
     'Gate', 'LogFile', 'LogStream',
-    'Escrow', 'Producer'
+    'Escrow', 'Producer', 'Gang'
 ]
