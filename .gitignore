@@ -1,7 +1,6 @@
 Untitled*.ipynb
 .*
 !.gitignore
-*.ipynb
 github_token
 *.bck
 # Byte-compiled / optimized / DLL files
