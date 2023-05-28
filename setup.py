@@ -23,9 +23,13 @@ setup(
     license = "BSD 3-clause",
     keywords = "threading, synchronization, multiprocessing, parallel computing",
     url = "https://github.com/imandr/pythreader",
-    packages=['pythreader', 'tests', 'pythreader.tools'],
+    packages=['pythreader', 'tests', 'pythreader.tools', 'director'],
     long_description="A set of useful tools built on top of standard Python threading module", #read('README'),
     zip_safe = False,
+    entry_points = { "console_scripts": [
+                "director = director.director:main",
+            ]
+        },
     classifiers=[
         "Operating System :: POSIX",
         "Topic :: Software Development :: Libraries :: Python Modules",

@@ -16,14 +16,7 @@ except ModuleNotFoundError:
     print("lark library needs to be installed.\nPlease use 'pip install lark'.", file=sys.stderr)
     sys.exit(1)
 
-try:
-    import webpie
-except ModuleNotFoundError:
-    import sys
-    print("webpie library needs to be installed.\nPlease use 'pip install webpie'.", file=sys.stderr)
-    sys.exit(1)
-
-from webpie import HTTPServer, WPApp, WPHandler
+from .parser import Parser, convert
 
 Usage = """
 python convery.py <script.yaml>
@@ -366,16 +359,15 @@ class SequentialGroup(Step):
             self.Status = "killed"
             self.RunningStep = None
 
-class Script(WPApp):
+class Script(object):
 
     def __init__(self, text, port=8888):
-        from parser import Parser, convert
         self.Tree = convert(Parser().parse(text))
         
         try:
             from webpie import HTTPServer, WPApp, WPHandler
-            self.HTTPServer = HTTPServer(port, self)
-            WPApp.__init__(self, self.status_request)            
+            app = WPApp(self.status_request)
+            self.HTTPServer = HTTPServer(port, app)
         except ModuleNotFoundError:
             print("Can not import webpie module. HTTP status server will not be running. Use 'pip install webpie' to enable the HTTP server.", file=sys.stderr)
             self.HTTPServer = None
@@ -387,6 +379,7 @@ class Script(WPApp):
         result = self.Tree.run(quiet)
         if self.HTTPServer is not None:
             self.HTTPServer.close()
+        print("sctipr is done. server closed")        
         return result
 
     def status_request(self, request, relpath, **args):
