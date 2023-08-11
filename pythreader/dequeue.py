@@ -82,19 +82,6 @@ class DEQueue(Primitive):
     def __iter__(self):
         return self
 
-    @synchronized
-    def __next_old__(self):
-        while not self.Closed or len(self) > 0:
-            while not self.Closed and len(self) == 0:
-                self.sleep()
-            item = self.pop()
-            if item is not None:
-                return item
-            else:
-                break
-        raise StopIteration()
-
-    @synchronized
     def __next__(self):
         item = self.pop()
         if item is None:
