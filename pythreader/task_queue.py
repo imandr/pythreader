@@ -451,6 +451,7 @@ class TaskQueue(Primitive):
         tasks = self.Queue.items()
         return [t for t in tasks if not t.is_running], [t for t in tasks if t.is_running]
         
+    @synchronized
     def nrunning(self):
         """
         Returns:
@@ -458,6 +459,7 @@ class TaskQueue(Primitive):
         """
         return sum(t.is_running for t in self.Queue.items())
         
+    @synchronized
     def nwaiting(self):
         """
         Returns:
@@ -465,6 +467,7 @@ class TaskQueue(Primitive):
         """
         return sum(not t.is_running for t in self.Queue.items())
         
+    @synchronized
     def counts(self):
         """
         Returns:
@@ -505,7 +508,7 @@ class TaskQueue(Primitive):
         Blocks until the queue is empty (no tasks are running or waiting)
         """
         # wait until all tasks are done and the queue is empty
-        if not self.isEmpty():
+        if not self.is_empty():
             while not self.sleep(function=self.is_empty):
                 pass
                 
@@ -513,10 +516,10 @@ class TaskQueue(Primitive):
 
     def drain(self):
         """
-        Holds the queue and then blocks until the queue is empty (no tasks are running and no tasks are waiting)
+        Blocks until no more tasks are running
         """
-        self.hold()
-        self.waitUntilEmpty()
+        while self.nrunning() > 0:
+            self.sleep(10)
 
     @synchronized
     def flush(self):
